@@ -13,7 +13,7 @@ def extract_clauses(text: str) -> dict:
     return {"clauses": ["termination", "liability", "indemnification"]}
 
 
-model = BedrockModel(model_id="us.anthropic.claude-sonnet-4-20250514-v1:0")
+model = BedrockModel(model_id="us.anthropic.claude-sonnet-4-5-20250929-v1:0")
 agent = Agent(
     model=model,
     tools=[extract_clauses],

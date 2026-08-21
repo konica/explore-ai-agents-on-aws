@@ -6,7 +6,7 @@ from strands.models.bedrock import BedrockModel
 # Initialize outside the handler so it persists across warm invocations.
 # The first request pays the setup cost. Subsequent requests reuse this agent.
 model = BedrockModel(
-    model_id=os.environ.get("MODEL_ID", "us.anthropic.claude-sonnet-4-20250514-v1:0"),
+    model_id=os.environ.get("MODEL_ID", "us.anthropic.claude-sonnet-4-5-20250929-v1:0"),
 )
 
 agent = Agent(

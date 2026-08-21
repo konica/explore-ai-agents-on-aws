@@ -72,5 +72,5 @@ For AgentCore deployment, follow the step-by-step instructions in `multiagent/RE
 
 ## Notes
 
-- The AgentCore, ECS, and Lambda examples all use `us.anthropic.claude-sonnet-4-20250514-v1:0` — this model is available by default in Bedrock
+- The AgentCore, ECS, and Lambda examples all use `us.anthropic.claude-sonnet-4-5-20250929-v1:0` — Bedrock enables serverless models by default, but Anthropic models need a one-time use-case form per account before the first call
 - The `multiagent/` example requires Cognito OAuth setup for AgentCore deployment — see `setup_cognito.sh` in the chapter 6 root folder

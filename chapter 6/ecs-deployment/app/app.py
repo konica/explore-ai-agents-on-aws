@@ -19,7 +19,7 @@ app = FastAPI(title="Hospital Scheduling Agent")
 STATIC_DIR = Path(__file__).parent / "static"
 app.mount("/static", StaticFiles(directory=str(STATIC_DIR)), name="static")
 
-MODEL_ID = os.environ.get("MODEL_ID", "us.anthropic.claude-sonnet-4-20250514-v1:0")
+MODEL_ID = os.environ.get("MODEL_ID", "us.anthropic.claude-sonnet-4-5-20250929-v1:0")
 
 SYSTEM_PROMPT = """You are a hospital surgical scheduling coordinator. You help staff
 find available time slots for procedures by checking provider availability,

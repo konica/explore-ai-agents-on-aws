@@ -27,7 +27,7 @@ def calculate_discount(amount: float, tier: str) -> str:
 
 
 model = BedrockModel(
-    model_id="us.anthropic.claude-sonnet-4-20250514-v1:0",
+    model_id="us.anthropic.claude-sonnet-4-5-20250929-v1:0",
 )
 
 agent = Agent(
