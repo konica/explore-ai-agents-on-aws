@@ -36,7 +36,10 @@ Your Studio domain execution role needs the following permissions. Attach this a
         "bedrock:ListFoundationModels",
         "bedrock:CreateGuardrail",
         "bedrock:DeleteGuardrail",
-        "bedrock:GetGuardrail"
+        "bedrock:GetGuardrail",
+        "bedrock:PutUseCaseForModelAccess",
+        "bedrock:GetUseCaseForModelAccess",
+        "bedrock:GetFoundationModelAvailability"
       ],
       "Resource": "*"
     },
@@ -59,6 +62,15 @@ Your Studio domain execution role needs the following permissions. Attach this a
         "s3:ListBucket"
       ],
       "Resource": ["arn:aws:s3:::*", "arn:aws:s3:::*/*"]
+    },
+    {
+      "Effect": "Allow",
+      "Action": [
+        "aws-marketplace:Subscribe",
+        "aws-marketplace:Unsubscribe",
+        "aws-marketplace:ViewSubscriptions"
+      ],
+      "Resource": "*"
     },
     {
       "Effect": "Allow",
@@ -113,9 +125,23 @@ Your Studio domain execution role needs the following permissions. Attach this a
 
 #### Step 2: Verify Bedrock model access
 
-Amazon Bedrock models are enabled by default in your AWS account. No manual approval is needed.
+Serverless foundation models are enabled by default in all commercial regions — the old **Model access** console page has been retired. Two things still gate the first call:
 
-If you get an `AccessDeniedException`, check that your execution role has `bedrock:InvokeModel` permissions (covered in Step 1) and that you are in a region where Bedrock is available (e.g. `us-east-1`).
+1. **AWS Marketplace permissions.** The first invocation in an account auto-subscribes you to the model, which needs `aws-marketplace:Subscribe`, `Unsubscribe`, and `ViewSubscriptions` (included in the Step 1 policy). Your account also needs a valid payment method.
+2. **Anthropic models require a one-time use-case form.** Claude models are enabled by default but will not serve a request until you submit it, once per account (or once at the AWS Organizations management account, which all member accounts inherit).
+
+Submit the form by opening any Anthropic model from the Bedrock console model catalog, or from the CLI:
+
+```bash
+# already submitted? this succeeds if so, ResourceNotFoundException if not
+aws bedrock get-use-case-for-model-access --region us-east-1
+```
+
+Until it is submitted, Claude returns `ValidationException: Operation not allowed` — an error that does not mention the form. Amazon Nova models are unaffected.
+
+Brand-new accounts may also be held in verification, which returns `AccessDeniedException: Your account is currently being verified`. AWS says this normally clears within 2 hours; nothing is wrong with your setup.
+
+If you get an `AccessDeniedException` after all that, check that your execution role has `bedrock:InvokeModel` (covered in Step 1) and that you are in a region where Bedrock is available (e.g. `us-east-1`).
 
 The examples in this book use the following models:
 - `us.amazon.nova-lite-v1:0`
@@ -193,7 +219,10 @@ Your IAM user or role needs the following policy:
         "bedrock:ListFoundationModels",
         "bedrock:CreateGuardrail",
         "bedrock:DeleteGuardrail",
-        "bedrock:GetGuardrail"
+        "bedrock:GetGuardrail",
+        "bedrock:PutUseCaseForModelAccess",
+        "bedrock:GetUseCaseForModelAccess",
+        "bedrock:GetFoundationModelAvailability"
       ],
       "Resource": "*"
     },
@@ -216,6 +245,15 @@ Your IAM user or role needs the following policy:
         "s3:ListBucket"
       ],
       "Resource": ["arn:aws:s3:::*", "arn:aws:s3:::*/*"]
+    },
+    {
+      "Effect": "Allow",
+      "Action": [
+        "aws-marketplace:Subscribe",
+        "aws-marketplace:Unsubscribe",
+        "aws-marketplace:ViewSubscriptions"
+      ],
+      "Resource": "*"
     },
     {
       "Effect": "Allow",
@@ -270,7 +308,9 @@ Your IAM user or role needs the following policy:
 
 #### Step 3: Verify Bedrock model access
 
-Same as SageMaker Studio — Bedrock models are enabled by default. If you get an `AccessDeniedException`, check that your IAM user or role has `bedrock:InvokeModel` permissions (covered in Step 2) and that your `AWS_DEFAULT_REGION` is set to a region where Bedrock is available.
+Same as SageMaker Studio: serverless models are enabled by default, but Anthropic models need the one-time use-case form before the first call, and the first invocation needs AWS Marketplace permissions (both covered in Step 2's policy). See Option 1, Step 2 above for the details and the `get-use-case-for-model-access` check.
+
+If you get an `AccessDeniedException`, check that your IAM user or role has `bedrock:InvokeModel` permissions (covered in Step 2) and that your `AWS_DEFAULT_REGION` is set to a region where Bedrock is available.
 
 #### Step 4: Install dependencies
 
@@ -311,7 +351,7 @@ print(f"✅ Bedrock OK — {len(models['modelSummaries'])} models available")
 |---|---|---|
 | AWS credentials | Automatic (execution role) | `aws configure` or env vars |
 | IAM permissions | Attach to execution role | Attach to IAM user/role |
-| Bedrock model access | Enabled by default | Enabled by default |
+| Bedrock model access | Enabled by default; Anthropic models need a one-time use-case form | Enabled by default; Anthropic models need a one-time use-case form |
 | Python packages | `pip install` in notebook | `pip install` locally |
 | Region | Set in Studio domain | `AWS_DEFAULT_REGION` env var |
 
