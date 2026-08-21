@@ -25,7 +25,7 @@ Resources:
         - !Ref Architecture
       Environment:
         Variables:
-          MODEL_ID: us.anthropic.claude-sonnet-4-20250514-v1:0
+          MODEL_ID: us.anthropic.claude-sonnet-4-5-20250929-v1:0
       Policies:
         - Statement:
             - Effect: Allow

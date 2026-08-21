@@ -10,7 +10,7 @@ CONTAINER_PORT=8080
 CPU=1024        # 1 vCPU
 MEMORY=2048     # 2 GB
 DESIRED_COUNT=1
-MODEL_ID="us.anthropic.claude-sonnet-4-20250514-v1:0"
+MODEL_ID="us.anthropic.claude-sonnet-4-5-20250929-v1:0"
 
 REGION=$(aws configure get region 2>/dev/null || echo "us-east-1")
 ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)
