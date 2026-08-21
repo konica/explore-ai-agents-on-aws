@@ -119,7 +119,7 @@ If you get an `AccessDeniedException`, check that your execution role has `bedro
 
 The examples in this book use the following models:
 - `us.amazon.nova-lite-v1:0`
-- `us.anthropic.claude-3-5-haiku-20241022-v1:0`
+- `us.anthropic.claude-haiku-4-5-20251001-v1:0`
 - `us.anthropic.claude-sonnet-4-20250514-v1:0`
 - `us.anthropic.claude-sonnet-4-5-20250929-v1:0`
 
