@@ -3,3 +3,5 @@ strands-agents-tools
 langchain
 langchain-aws
 langgraph
+jupyterlab  # for running notebooks; jupyter notebook / jupyter lab
+notebook  # provides the classic jupyter notebook CLI
