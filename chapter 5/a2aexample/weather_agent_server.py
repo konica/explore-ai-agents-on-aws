@@ -129,7 +129,7 @@ if __name__ == "__main__":
         # The Strands Agent that handles all incoming messages
         agent=weather_agent,
         # Bind to localhost only (use "0.0.0.0" to expose to network)
-        host="127.0.0.1",
+        host="0.0.0.0",
         # HTTP port to listen on
         port=9001,
         # Skills published in the agent card for client discovery

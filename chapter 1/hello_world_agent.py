@@ -5,7 +5,7 @@ from strands.models.bedrock import BedrockModel
 
 # Use Nova Lite — always available, no approval expiry
 # To use Claude instead: BedrockModel(model_id="us.anthropic.claude-haiku-4-5-20251001-v1:0")
-model = BedrockModel(model_id="us.amazon.nova-lite-v1:0")
+model = BedrockModel(model_id="us.anthropic.claude-haiku-4-5-20251001-v1:0")
 
 agent = Agent(model=model)
 

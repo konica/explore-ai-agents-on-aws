@@ -1,0 +1,6 @@
+{
+  "enabledMcpjsonServers": [
+    "strands-agents"
+  ],
+  "enableAllProjectMcpServers": true
+}
