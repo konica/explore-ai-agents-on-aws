@@ -49,7 +49,7 @@ echo ""
 echo "Step 1: Building container image (this takes 1-2 minutes the first time)..."
 # Clean previous build artifacts to avoid cache issues
 rm -rf .aws-sam 2>/dev/null || true
-sam build
+sam build --parameter-overrides Architecture=$LAMBDA_ARCH
 echo ""
 
 # --- Step 2: Deploy ---
