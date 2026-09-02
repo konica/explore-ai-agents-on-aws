@@ -1,0 +1,92 @@
+---
+- name: Provision local dev environment
+  hosts: localhost
+  connection: local
+  become: true
+  vars:
+    aws_cli_arch: "{{ 'aarch64' if ansible_facts.architecture == 'aarch64' else 'x86_64' }}"
+    sam_cli_arch: "{{ 'arm64' if ansible_facts.architecture == 'aarch64' else 'x86_64' }}"
+  tasks:
+    # chapter 6/lambda-deployment: builds the Lambda container image locally
+    - name: Check for existing Docker installation
+      ansible.builtin.command: docker --version
+      register: docker_check
+      failed_when: false
+      changed_when: false
+
+    - name: Install Docker
+      ansible.builtin.package:
+        name: docker.io
+        state: present
+      when: docker_check.rc != 0
+
+    - name: Ensure Docker service is running
+      ansible.builtin.service:
+        name: docker
+        state: started
+        enabled: true
+      when: docker_check.rc != 0
+      ignore_errors: true
+
+    # chapter 6/lambda-deployment: needed to extract the AWS CLI / SAM CLI installers
+    - name: Install unzip
+      ansible.builtin.package:
+        name: unzip
+        state: present
+
+    # chapter 6/lambda-deployment: deploy.sh calls `aws sts get-caller-identity`
+    - name: Check for existing AWS CLI installation
+      ansible.builtin.command: aws --version
+      register: aws_cli_check
+      failed_when: false
+      changed_when: false
+
+    - name: Download AWS CLI v2 installer
+      ansible.builtin.get_url:
+        url: "https://awscli.amazonaws.com/awscli-exe-linux-{{ aws_cli_arch }}.zip"
+        dest: /tmp/awscliv2.zip
+        mode: "0644"
+      when: aws_cli_check.rc != 0
+
+    - name: Unzip AWS CLI installer
+      ansible.builtin.unarchive:
+        src: /tmp/awscliv2.zip
+        dest: /tmp
+        remote_src: true
+      when: aws_cli_check.rc != 0
+
+    - name: Run AWS CLI installer
+      ansible.builtin.command: /tmp/aws/install
+      when: aws_cli_check.rc != 0
+
+    # chapter 6/lambda-deployment: deploy.sh calls `sam build` / `sam deploy`
+    - name: Check for existing AWS SAM CLI installation
+      ansible.builtin.command: sam --version
+      register: sam_cli_check
+      failed_when: false
+      changed_when: false
+
+    - name: Download AWS SAM CLI installer
+      ansible.builtin.get_url:
+        url: "https://github.com/aws/aws-sam-cli/releases/latest/download/aws-sam-cli-linux-{{ sam_cli_arch }}.zip"
+        dest: /tmp/aws-sam-cli.zip
+        mode: "0644"
+      when: sam_cli_check.rc != 0
+
+    - name: Create AWS SAM CLI install directory
+      ansible.builtin.file:
+        path: /tmp/sam-installation
+        state: directory
+        mode: "0755"
+      when: sam_cli_check.rc != 0
+
+    - name: Unzip AWS SAM CLI installer
+      ansible.builtin.unarchive:
+        src: /tmp/aws-sam-cli.zip
+        dest: /tmp/sam-installation
+        remote_src: true
+      when: sam_cli_check.rc != 0
+
+    - name: Run AWS SAM CLI installer
+      ansible.builtin.command: /tmp/sam-installation/install
+      when: sam_cli_check.rc != 0
