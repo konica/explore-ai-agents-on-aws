@@ -34,6 +34,12 @@
         name: unzip
         state: present
 
+    # dev environment: terminal multiplexer for long-running/background sessions
+    - name: Install tmux
+      ansible.builtin.package:
+        name: tmux
+        state: present
+
     # chapter 6/lambda-deployment: deploy.sh calls `aws sts get-caller-identity`
     - name: Check for existing AWS CLI installation
       ansible.builtin.command: aws --version
