@@ -301,6 +301,11 @@ Your IAM user or role needs the following policy:
         "codebuild:DeleteProject"
       ],
       "Resource": "*"
+    },
+    {
+      "Effect": "Allow",
+      "Action": "iam:PassRole",
+      "Resource": "*"
     }
   ]
 }

@@ -79,7 +79,7 @@ pip install bedrock-agentcore-starter-toolkit
 ```bash
 export REGION=us-east-1
 export USERNAME=testuser
-export PASSWORD='YourPassword123!'
+export PASSWORD='AgentCore123!'
 
 POOL_ID=$(aws cognito-idp create-user-pool \
   --pool-name "FinanceAgentPool" \

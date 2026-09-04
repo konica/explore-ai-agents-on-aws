@@ -15,7 +15,8 @@ import os
 import uvicorn
 from fastapi import FastAPI
 from strands import Agent
-from strands.multiagent.a2a import A2AAgent, A2AServer
+from strands.agent.a2a_agent import A2AAgent
+from strands.multiagent.a2a import A2AServer
 from a2a.types import AgentSkill
 
 logging.basicConfig(level=logging.INFO)

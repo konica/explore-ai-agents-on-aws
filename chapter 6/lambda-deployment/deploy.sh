@@ -1,7 +1,7 @@
 #!/bin/bash
 set -e
 
-STACK_NAME="document-analysis-agent"
+STACK_NAME="lambda-document-analysis-agent"
 REGION="${AWS_REGION:-us-east-1}"
 
 # Auto-detect architecture: arm64 for Apple Silicon / Graviton, x86_64 for Intel
