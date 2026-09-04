@@ -71,6 +71,11 @@ curl -X POST http://localhost:9001/ \
 
 ## Deploy to AgentCore
 
+**Quick deploy:** once tools are installed (Step 1), `./deploy.sh` runs Steps 2-6 below end to
+end — Cognito setup, all 3 agents in dependency order, and the cross-agent IAM grants — and is
+safe to re-run. The steps below walk through what it does and why, useful for troubleshooting or
+deploying by hand.
+
 ### Step 1: Install tools
 
 ```bash
