@@ -201,3 +201,15 @@ curl -X POST "https://bedrock-agentcore.$REGION.amazonaws.com/runtimes/$ORCH_ARN
 The first call to a freshly deployed/updated agent pays a cold-start cost (the container imports
 Strands/boto3/mcp and connects to its downstream agent before it can serve requests) and can take
 30-100s; a warm container responds in a few seconds.
+
+## Cleanup
+
+```bash
+./cleanup.sh          # asks for confirmation, then deletes everything
+./cleanup.sh --dry-run  # preview what would be deleted, changes nothing
+```
+
+Removes all 3 agent runtimes and everything `agentcore` created for them (ECR images/repos,
+CodeBuild projects, execution roles, build artifacts), plus what it deliberately leaves behind
+(the memory resources, the cross-agent IAM grants from Steps 4-5), and the Cognito user pool from
+Step 2. Does not touch other chapters' deployed agents.
