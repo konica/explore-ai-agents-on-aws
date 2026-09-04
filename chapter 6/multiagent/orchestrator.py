@@ -11,20 +11,80 @@ Deploy: agentcore configure -e orchestrator.py --protocol A2A
 
 import logging
 import os
+import uuid
 
+import boto3
+import httpx
 import uvicorn
+from botocore.auth import SigV4Auth
+from botocore.awsrequest import AWSRequest
 from fastapi import FastAPI
 from strands import Agent
-from strands.agent.a2a_agent import A2AAgent
 from strands.multiagent.a2a import A2AServer
-from a2a.types import AgentSkill
+from strands_tools.a2a_client import A2AClientToolProvider
+from a2a.types import AgentCapabilities, AgentCard, AgentSkill
 
 logging.basicConfig(level=logging.INFO)
 
 RUNTIME_URL = os.environ.get("AGENTCORE_RUNTIME_URL", "http://127.0.0.1:9000/")
 STOCK_A2A_URL = os.environ.get("STOCK_A2A_URL", "http://127.0.0.1:9001")
 
-stock_agent = A2AAgent(STOCK_A2A_URL)
+
+class SigV4HttpxAuth(httpx.Auth):
+    """Signs outbound requests with SigV4 so IAM-authorized AgentCore runtimes accept them."""
+
+    def __init__(self, service: str = "bedrock-agentcore", region: str | None = None):
+        session = boto3.Session()
+        self.region = region or session.region_name or "us-east-1"
+        self.credentials = session.get_credentials()
+        self.service = service
+
+    def auth_flow(self, request):
+        aws_request = AWSRequest(
+            method=request.method, url=str(request.url), data=request.content, headers=dict(request.headers)
+        )
+        SigV4Auth(self.credentials, self.service, self.region).add_auth(aws_request)
+        request.headers.update(dict(aws_request.headers))
+        yield request
+
+
+# A2AAgent isn't a Strands tool on its own; A2AClientToolProvider exposes it as one.
+_is_agentcore = "bedrock-agentcore" in STOCK_A2A_URL
+_stock_httpx_args = None
+if _is_agentcore:
+    # AgentCore Runtime only routes the exact ".../invocations" path, so the standard
+    # A2A discovery GET to ".../invocations/.well-known/agent-card.json" is rejected
+    # (403). Skip HTTP discovery below and register the stock agent's card directly.
+    # Calls also need SigV4 auth and a stable runtime session id (so a multi-request
+    # exchange keeps routing to the same container).
+    _stock_httpx_args = {
+        "auth": SigV4HttpxAuth(),
+        "headers": {"X-Amzn-Bedrock-AgentCore-Runtime-Session-Id": str(uuid.uuid4())},
+    }
+
+stock_agent_provider = A2AClientToolProvider(
+    known_agent_urls=[] if _is_agentcore else [STOCK_A2A_URL],
+    httpx_client_args=_stock_httpx_args,
+)
+
+if _is_agentcore:
+    stock_agent_provider._discovered_agents[STOCK_A2A_URL] = AgentCard(
+        name="Stock Agent",
+        description="Provides stock prices and financial information.",
+        url=STOCK_A2A_URL,
+        version="1.0.0",
+        capabilities=AgentCapabilities(streaming=True),
+        default_input_modes=["text"],
+        default_output_modes=["text"],
+        skills=[
+            AgentSkill(
+                id="stock_lookup",
+                name="Stock Price Lookup",
+                description="Get latest stock prices and financial info for any publicly traded company.",
+                tags=["stocks", "finance", "prices", "market"],
+            ),
+        ],
+    )
 
 orchestrator = Agent(
     name="Finance Orchestrator",
@@ -34,7 +94,7 @@ orchestrator = Agent(
         "investments, or market conditions, use the stock agent to get current prices. "
         "Provide helpful analysis and context with the data."
     ),
-    tools=[stock_agent],
+    tools=stock_agent_provider.tools,
     callback_handler=None,
 )
 

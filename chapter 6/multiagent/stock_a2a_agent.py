@@ -14,7 +14,11 @@ Deploy: agentcore configure -e stock_a2a_agent.py --protocol A2A
 import logging
 import os
 
+import boto3
+import httpx
 import uvicorn
+from botocore.auth import SigV4Auth
+from botocore.awsrequest import AWSRequest
 from fastapi import FastAPI
 from strands import Agent
 from strands.tools.mcp import MCPClient
@@ -27,9 +31,37 @@ logging.basicConfig(level=logging.INFO)
 
 STOCK_MCP_URL = os.environ.get("STOCK_MCP_URL", "http://localhost:8000/mcp")
 RUNTIME_URL = os.environ.get("AGENTCORE_RUNTIME_URL", "http://127.0.0.1:9001/")
+# AgentCore Runtime requires A2A containers to listen on port 9000 (see the generated
+# Dockerfile's EXPOSE). Locally we default to 9001 so this can run alongside orchestrator.py
+# (which uses 9000) on one machine; deploys must pass --env PORT=9000.
+PORT = int(os.environ.get("PORT", "9001"))
 
-# MCP client for stock price tools
-mcp_client = MCPClient(lambda: streamablehttp_client(STOCK_MCP_URL))
+
+class SigV4HttpxAuth(httpx.Auth):
+    """Signs outbound requests with SigV4 so IAM-authorized AgentCore runtimes accept them."""
+
+    def __init__(self, service: str = "bedrock-agentcore", region: str | None = None):
+        session = boto3.Session()
+        self.region = region or session.region_name or "us-east-1"
+        self.credentials = session.get_credentials()
+        self.service = service
+
+    def auth_flow(self, request):
+        aws_request = AWSRequest(
+            method=request.method, url=str(request.url), data=request.content, headers=dict(request.headers)
+        )
+        SigV4Auth(self.credentials, self.service, self.region).add_auth(aws_request)
+        request.headers.update(dict(aws_request.headers))
+        yield request
+
+
+# MCP client for stock price tools. AgentCore MCP runtimes require SigV4 auth. terminate_on_close
+# must be False: the default sends a session-close DELETE that tears down the AgentCore session
+# before the client is done using it, breaking later tool calls.
+_mcp_auth = SigV4HttpxAuth() if "bedrock-agentcore" in STOCK_MCP_URL else None
+mcp_client = MCPClient(
+    lambda: streamablehttp_client(STOCK_MCP_URL, auth=_mcp_auth, timeout=120, terminate_on_close=False)
+)
 
 stock_agent = Agent(
     name="Stock Agent",
@@ -77,5 +109,5 @@ def ping():
 app.mount("/", a2a_server.to_fastapi_app())
 
 if __name__ == "__main__":
-    print(f"Stock A2A Agent on http://0.0.0.0:9001 (MCP: {STOCK_MCP_URL})")
-    uvicorn.run(app, host="0.0.0.0", port=9001)
+    print(f"Stock A2A Agent on http://0.0.0.0:{PORT} (MCP: {STOCK_MCP_URL})")
+    uvicorn.run(app, host="0.0.0.0", port=PORT)
