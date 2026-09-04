@@ -1,0 +1,192 @@
+default_agent: stock_a2a_agent
+agents:
+  stock_mcp_server:
+    name: stock_mcp_server
+    language: python
+    node_version: '20'
+    entrypoint: /c/Data/OSS/AI-Agents-on-AWS/.claude/worktrees/multiagent-agentcore-deploy/chapter
+      6/multiagent/stock_mcp_server.py
+    deployment_type: container
+    runtime_type: null
+    platform: linux/arm64
+    container_runtime: docker
+    source_path: /c/Data/OSS/AI-Agents-on-AWS/.claude/worktrees/multiagent-agentcore-deploy/chapter
+      6/multiagent
+    aws:
+      execution_role: arn:aws:iam::685394474162:role/AmazonBedrockAgentCoreSDKRuntime-us-east-1-1d40e3a75e
+      execution_role_auto_create: false
+      account: '685394474162'
+      region: us-east-1
+      ecr_repository: 685394474162.dkr.ecr.us-east-1.amazonaws.com/bedrock-agentcore-stock_mcp_server
+      ecr_auto_create: false
+      s3_path: null
+      s3_auto_create: false
+      network_configuration:
+        network_mode: PUBLIC
+        network_mode_config: null
+      protocol_configuration:
+        server_protocol: MCP
+      observability:
+        enabled: true
+      lifecycle_configuration:
+        idle_runtime_session_timeout: null
+        max_lifetime: null
+    bedrock_agentcore:
+      agent_id: stock_mcp_server-djZUehCq97
+      agent_arn: arn:aws:bedrock-agentcore:us-east-1:685394474162:runtime/stock_mcp_server-djZUehCq97
+      agent_session_id: null
+    codebuild:
+      project_name: bedrock-agentcore-stock_mcp_server-builder
+      execution_role: arn:aws:iam::685394474162:role/AmazonBedrockAgentCoreSDKCodeBuild-us-east-1-1d40e3a75e
+      source_bucket: bedrock-agentcore-codebuild-sources-685394474162-us-east-1
+    memory:
+      mode: STM_ONLY
+      memory_id: stock_mcp_server_mem-8nacF9GwvA
+      memory_arn: arn:aws:bedrock-agentcore:us-east-1:685394474162:memory/stock_mcp_server_mem-8nacF9GwvA
+      memory_name: stock_mcp_server_mem
+      event_expiry_days: 30
+      first_invoke_memory_check_done: true
+      was_created_by_toolkit: true
+    identity:
+      credential_providers: []
+      workload: null
+    aws_jwt:
+      enabled: false
+      audiences: []
+      signing_algorithm: ES384
+      issuer_url: null
+      duration_seconds: 300
+    authorizer_configuration: null
+    request_header_configuration: null
+    oauth_configuration: null
+    api_key_env_var_name: null
+    api_key_credential_provider_name: null
+    is_generated_by_agentcore_create: false
+  stock_a2a_agent:
+    name: stock_a2a_agent
+    language: python
+    node_version: '20'
+    entrypoint: /c/Data/OSS/AI-Agents-on-AWS/.claude/worktrees/multiagent-agentcore-deploy/chapter
+      6/multiagent/stock_a2a_agent.py
+    deployment_type: container
+    runtime_type: null
+    platform: linux/arm64
+    container_runtime: docker
+    source_path: /c/Data/OSS/AI-Agents-on-AWS/.claude/worktrees/multiagent-agentcore-deploy/chapter
+      6/multiagent
+    aws:
+      execution_role: arn:aws:iam::685394474162:role/AmazonBedrockAgentCoreSDKRuntime-us-east-1-131e4b97f3
+      execution_role_auto_create: false
+      account: '685394474162'
+      region: us-east-1
+      ecr_repository: 685394474162.dkr.ecr.us-east-1.amazonaws.com/bedrock-agentcore-stock_a2a_agent
+      ecr_auto_create: false
+      s3_path: null
+      s3_auto_create: false
+      network_configuration:
+        network_mode: PUBLIC
+        network_mode_config: null
+      protocol_configuration:
+        server_protocol: A2A
+      observability:
+        enabled: true
+      lifecycle_configuration:
+        idle_runtime_session_timeout: null
+        max_lifetime: null
+    bedrock_agentcore:
+      agent_id: stock_a2a_agent-RrnqC1A4pL
+      agent_arn: arn:aws:bedrock-agentcore:us-east-1:685394474162:runtime/stock_a2a_agent-RrnqC1A4pL
+      agent_session_id: null
+    codebuild:
+      project_name: bedrock-agentcore-stock_a2a_agent-builder
+      execution_role: arn:aws:iam::685394474162:role/AmazonBedrockAgentCoreSDKCodeBuild-us-east-1-131e4b97f3
+      source_bucket: bedrock-agentcore-codebuild-sources-685394474162-us-east-1
+    memory:
+      mode: STM_ONLY
+      memory_id: stock_a2a_agent_mem-wozG945S8m
+      memory_arn: arn:aws:bedrock-agentcore:us-east-1:685394474162:memory/stock_a2a_agent_mem-wozG945S8m
+      memory_name: stock_a2a_agent_mem
+      event_expiry_days: 30
+      first_invoke_memory_check_done: true
+      was_created_by_toolkit: false
+    identity:
+      credential_providers: []
+      workload: null
+    aws_jwt:
+      enabled: false
+      audiences: []
+      signing_algorithm: ES384
+      issuer_url: null
+      duration_seconds: 300
+    authorizer_configuration: null
+    request_header_configuration: null
+    oauth_configuration: null
+    api_key_env_var_name: null
+    api_key_credential_provider_name: null
+    is_generated_by_agentcore_create: false
+  orchestrator:
+    name: orchestrator
+    language: python
+    node_version: '20'
+    entrypoint: /c/Data/OSS/AI-Agents-on-AWS/.claude/worktrees/multiagent-agentcore-deploy/chapter
+      6/multiagent/orchestrator.py
+    deployment_type: container
+    runtime_type: null
+    platform: linux/arm64
+    container_runtime: docker
+    source_path: /c/Data/OSS/AI-Agents-on-AWS/.claude/worktrees/multiagent-agentcore-deploy/chapter
+      6/multiagent
+    aws:
+      execution_role: arn:aws:iam::685394474162:role/AmazonBedrockAgentCoreSDKRuntime-us-east-1-11376b7e2a
+      execution_role_auto_create: false
+      account: '685394474162'
+      region: us-east-1
+      ecr_repository: 685394474162.dkr.ecr.us-east-1.amazonaws.com/bedrock-agentcore-orchestrator
+      ecr_auto_create: false
+      s3_path: null
+      s3_auto_create: false
+      network_configuration:
+        network_mode: PUBLIC
+        network_mode_config: null
+      protocol_configuration:
+        server_protocol: A2A
+      observability:
+        enabled: true
+      lifecycle_configuration:
+        idle_runtime_session_timeout: null
+        max_lifetime: null
+    bedrock_agentcore:
+      agent_id: orchestrator-TgirnK70rF
+      agent_arn: arn:aws:bedrock-agentcore:us-east-1:685394474162:runtime/orchestrator-TgirnK70rF
+      agent_session_id: null
+    codebuild:
+      project_name: bedrock-agentcore-orchestrator-builder
+      execution_role: arn:aws:iam::685394474162:role/AmazonBedrockAgentCoreSDKCodeBuild-us-east-1-11376b7e2a
+      source_bucket: bedrock-agentcore-codebuild-sources-685394474162-us-east-1
+    memory:
+      mode: STM_ONLY
+      memory_id: orchestrator_mem-9J5w3TFcqr
+      memory_arn: arn:aws:bedrock-agentcore:us-east-1:685394474162:memory/orchestrator_mem-9J5w3TFcqr
+      memory_name: orchestrator_mem
+      event_expiry_days: 30
+      first_invoke_memory_check_done: true
+      was_created_by_toolkit: false
+    identity:
+      credential_providers: []
+      workload: null
+    aws_jwt:
+      enabled: false
+      audiences: []
+      signing_algorithm: ES384
+      issuer_url: null
+      duration_seconds: 300
+    authorizer_configuration:
+      customJWTAuthorizer:
+        discoveryUrl: https://cognito-idp.us-east-1.amazonaws.com/us-east-1_9hRe6XI6m/.well-known/openid-configuration
+        allowedClients:
+        - 55674sivgsifnkrev8bhm4u219
+    request_header_configuration: null
+    oauth_configuration: null
+    api_key_env_var_name: null
+    api_key_credential_provider_name: null
+    is_generated_by_agentcore_create: false
