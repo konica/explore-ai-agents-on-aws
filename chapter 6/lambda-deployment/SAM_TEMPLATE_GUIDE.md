@@ -150,6 +150,53 @@ project's `template.yaml` (Lambda + API Gateway), which is why it's a good fit h
 triggers," CloudFormation (or CDK) when it's "a mix of infrastructure where Lambda is
 just one resource among many."
 
+## AWS's equivalent of an Azure Resource Group
+
+Coming from Azure, "delete the Resource Group and everything in it goes away" maps to
+**the CloudFormation stack** — with one important difference.
+
+When `cleanup.sh` runs `sam delete`, it deletes the CloudFormation stack
+`lambda-document-analysis-agent`. That one action tears down the Lambda function, its
+IAM role, the API Gateway REST API, and the `DocumentBucket` S3 bucket — every
+resource the stack owns — automatically, in dependency order. That's the same
+"delete the container, everything inside goes with it" behavior as an Azure Resource
+Group deletion.
+
+**The difference:** an Azure Resource Group is a *mandatory, flat, retroactive*
+container — every resource belongs to exactly one RG regardless of what tool created
+it, and resources can be assigned into any RG after the fact. A CloudFormation stack
+is not like that:
+
+- A stack only contains resources CloudFormation itself created for that stack (or
+  that were explicitly `import`ed into it — a deliberate extra step, not automatic).
+- Plenty of AWS resources belong to no stack at all — anything created via the
+  console, CLI, or another tool just exists loose in the account/region.
+- So AWS's grouping is opt-in per deployment, not "every resource lives in a group."
+
+### A naming trap to avoid
+
+AWS also has a service literally called **"Resource Groups"** (under Resource Groups &
+Tag Editor) — don't confuse it with Azure's. AWS Resource Groups are just a saved
+tag-based or stack-based *view* for the console/CLI (e.g. "show me everything tagged
+`Project=agent-demo`"). **Deleting an AWS Resource Group does not delete the
+underlying resources** — it only deletes the saved grouping definition. This is the
+opposite of what the name suggests to someone coming from Azure.
+
+### Other ways people simulate "delete everything together" on AWS
+
+- **Tags + `resourcegroupstaggingapi`** — tag everything with a common
+  `Project`/`Environment` tag, then script a delete loop over `get-resources` results.
+  Not atomic or dependency-aware like a stack delete — ordering is on you.
+- **A separate AWS account per project/environment** — AWS's real isolation boundary
+  is the *account*, not a sub-account group. Many orgs (via AWS Organizations /
+  Control Tower) spin up a disposable account per environment specifically so
+  "delete the account" is the RG-delete equivalent at that granularity.
+
+**Bottom line for this project:** think of `template.yaml` (one CloudFormation stack)
+as the "resource group" — that's the granularity where AWS gives atomic,
+dependency-ordered create/delete, which is why `cleanup.sh` only needs one
+`sam delete` call to remove everything the app stack owns.
+
 ## How SAM finds this file
 
 `sam build`, `sam deploy`, `sam validate`, and `sam local invoke` all auto-discover
