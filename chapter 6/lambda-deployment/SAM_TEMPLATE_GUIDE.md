@@ -84,6 +84,28 @@ deployed later in the same account/region, which is why deleting
 Stack 3 is the only one this project's code actually defines, and the only one
 `cleanup.sh` tears down.
 
+### Deploy-time flow
+
+```mermaid
+flowchart LR
+    Dev["Developer<br/>(deploy.sh)"] -->|"sam build:<br/>docker build"| Image["Container image<br/>(src/Dockerfile)"]
+    Image -->|"sam deploy:<br/>docker push"| ECR[("ECR Repository<br/>CompanionStack")]
+    Dev -->|"sam deploy:<br/>upload template + artifacts"| S3Stage[("S3 staging bucket<br/>aws-sam-cli-managed-default")]
+    S3Stage --> CFN{{"CloudFormation<br/>lambda-document-analysis-agent"}}
+    ECR --> CFN
+    CFN -->|creates| Lambda["Lambda Function<br/>DocumentAnalysisFunction"]
+    CFN -->|creates| APIGW["API Gateway<br/>ServerlessRestApi (Prod stage)"]
+    CFN -->|creates| Role["IAM Role<br/>DocumentAnalysisFunctionRole"]
+    CFN -->|"creates<br/>(granted read access,<br/>unused by current code)"| Bucket[("S3 Bucket<br/>DocumentBucket")]
+```
+
+This makes the dependency chain from the table above visual: the staging bucket and
+ECR repo must exist *before* CloudFormation can create the application stack, because
+that stack's resources (the Lambda function especially) are built from artifacts sam
+deploy pushes into them. See `README.md`'s "Request data flow" section for what
+happens *after* these resources exist — the runtime path a client's request actually
+takes through them.
+
 ## When to use SAM vs. plain CloudFormation
 
 SAM and CloudFormation aren't really either/or — a SAM template *is* a CloudFormation
