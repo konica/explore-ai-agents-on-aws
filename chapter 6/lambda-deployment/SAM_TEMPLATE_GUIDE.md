@@ -187,10 +187,21 @@ opposite of what the name suggests to someone coming from Azure.
 - **Tags + `resourcegroupstaggingapi`** — tag everything with a common
   `Project`/`Environment` tag, then script a delete loop over `get-resources` results.
   Not atomic or dependency-aware like a stack delete — ordering is on you.
-- **A separate AWS account per project/environment** — AWS's real isolation boundary
-  is the *account*, not a sub-account group. Many orgs (via AWS Organizations /
-  Control Tower) spin up a disposable account per environment specifically so
-  "delete the account" is the RG-delete equivalent at that granularity.
+- **A separate AWS account per project/environment** — note "account" here means an
+  **AWS account** (the whole billing/ownership container, identified by a 12-digit ID
+  like `685394474162` in `aws sts get-caller-identity`'s output), *not* an **IAM user**
+  like `poweruser` from that same output. Those are different things: an IAM user is
+  just a login/credential inside one AWS account; every resource it creates is owned
+  by that AWS account, not by the IAM user. Deleting the IAM user `poweruser` deletes
+  nothing it created — the Lambda function, S3 buckets, and CloudFormation stacks stay
+  exactly as they are, since they belong to account `685394474162` regardless of which
+  IAM user's credentials were used to create them. The only way to make an entire AWS
+  account's resources disappear is to close **the account itself** (Settings → Close
+  Account) — a distinct action from removing an IAM user, and one no IAM user (not
+  even the root user) can undo once its 90-day grace period ends. Many orgs (via AWS
+  Organizations / Control Tower) spin up a disposable *account* per environment for
+  exactly this reason: "close the account" is the RG-delete equivalent at that
+  granularity — an entire environment's worth of infrastructure, not a single app.
 
 **Bottom line for this project:** think of `template.yaml` (one CloudFormation stack)
 as the "resource group" — that's the granularity where AWS gives atomic,
