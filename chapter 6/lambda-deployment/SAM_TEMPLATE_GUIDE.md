@@ -208,6 +208,93 @@ as the "resource group" — that's the granularity where AWS gives atomic,
 dependency-ordered create/delete, which is why `cleanup.sh` only needs one
 `sam delete` call to remove everything the app stack owns.
 
+## Deleting a stack without `sam delete`
+
+For a "normal" CloudFormation stack — one not deployed through SAM, or when the raw
+command is wanted instead of `sam delete`'s wrapper — use CloudFormation's delete API
+directly.
+
+**CLI:**
+
+```bash
+aws cloudformation delete-stack --stack-name lambda-document-analysis-agent --region us-east-1
+aws cloudformation wait stack-delete-complete --stack-name lambda-document-analysis-agent --region us-east-1
+```
+
+`delete-stack` returns immediately (deletion is asynchronous); the `wait` call blocks
+until it's fully gone, the way `sam delete` appears to do synchronously.
+
+**Console:** CloudFormation → Stacks → select the stack → Delete → confirm.
+
+**CDK:** `cdk destroy <stack-name>` (or `cdk destroy --all`) — CDK's own wrapper around
+the same `delete-stack` API, the same relationship CDK has to CloudFormation that
+`sam delete` has.
+
+### Two things `sam delete` handles that raw `delete-stack` doesn't
+
+1. **Non-empty S3 buckets fail to delete.** `DocumentBucket` in this project's
+   `template.yaml` has no `DeletionPolicy`, so CloudFormation will try to delete it —
+   but it refuses if the bucket still has objects in it. Uploading anything through the
+   API before tearing down would leave that resource stuck in `DELETE_FAILED`; empty it
+   first with `aws s3 rm s3://<bucket-name> --recursive` and retry.
+2. **It doesn't touch the ECR CompanionStack.** `delete-stack` on the app stack alone
+   leaves `lambda-document-analysis-agent-<hash>-CompanionStack` (the managed ECR repo
+   from the three-stacks section above) behind. `sam delete` deletes it too, after
+   prompting to confirm removing the container images inside. To replicate manually:
+   ```bash
+   aws ecr batch-delete-image --repository-name <repo-name> --image-ids imageTag=latest --region us-east-1
+   aws cloudformation delete-stack --stack-name lambda-document-analysis-agent-<hash>-CompanionStack --region us-east-1
+   ```
+   (ECR repos with images refuse to delete until emptied — same rule as S3 buckets.)
+
+For a plain app stack with no S3/ECR resources holding data, `aws cloudformation
+delete-stack` is a complete drop-in replacement for `sam delete`. For this project
+specifically, `sam delete` does real cleanup work beyond the bare CloudFormation call.
+
+## How the CLIs relate: `aws`, `sam`, `cdk`, `boto3`, and CloudFormation
+
+These are four different tools that all ultimately talk to the same underlying AWS
+APIs — they're layers, not competitors:
+
+```
+boto3 (Python SDK)  ─┐
+aws CLI              ├──► raw AWS service APIs (CloudFormation, Lambda, S3, ECR, ...)
+sam CLI             ─┤        ▲
+cdk CLI             ─┘        │
+                   (both sam and cdk ultimately call CloudFormation's
+                    CreateStack/UpdateStack/DeleteStack APIs for you)
+```
+
+- **`aws` (AWS CLI)** — the general-purpose, low-level command-line client for *every*
+  AWS service. `aws cloudformation deploy`, `aws s3 cp`, `aws lambda invoke` — one
+  subcommand per API action, on any service, with no opinions about how you organize
+  infrastructure. Everything else in this list is built on top of the same APIs the
+  `aws` CLI exposes directly.
+- **`boto3`** — the AWS SDK **for Python**. Same relationship as the `aws` CLI (direct,
+  unopinionated access to every AWS service API), but called from Python code instead
+  of a shell — `boto3.client("cloudformation").delete_stack(...)` instead of
+  `aws cloudformation delete-stack`. Other languages have their own SDKs (`boto3` is
+  Python-specific; JavaScript/Java/Go/etc. have their own).
+- **`sam` CLI** — a higher-level tool specifically for serverless apps (see "SAM vs.
+  plain CloudFormation" above). It doesn't replace CloudFormation; `sam build` packages
+  code/images, and `sam deploy`/`sam delete` **generate a CloudFormation template and
+  call the CloudFormation APIs for you** (via the same mechanism the `aws` CLI or
+  `boto3` would use), plus manage the extra bootstrap stacks (staging bucket, ECR
+  companion stack) covered earlier.
+- **`cdk` CLI** — a higher-level tool for **any** AWS infrastructure (not just
+  serverless), where the template is *generated from real code* (TypeScript, Python,
+  Java, etc.) instead of written as YAML/JSON directly. `cdk synth` renders that code
+  into a CloudFormation template; `cdk deploy`/`cdk destroy` then call the same
+  CloudFormation APIs as `sam` or the `aws` CLI to actually create/delete resources.
+
+**The common thread:** CloudFormation is the actual state-tracking, resource-creating
+engine underneath all of them. `aws` and `boto3` talk to it (and every other AWS
+service) directly and generically. `sam` and `cdk` are both convenience layers that
+generate a CloudFormation template on your behalf and then drive the same
+CloudFormation APIs — they differ in *how* you author that template (SAM: YAML
+shorthand for serverless resources; CDK: general-purpose code for anything), not in
+what actually deploys it.
+
 ## How SAM finds this file
 
 `sam build`, `sam deploy`, `sam validate`, and `sam local invoke` all auto-discover
