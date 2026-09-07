@@ -48,6 +48,42 @@ CloudFormation for a deployed stack, run:
 aws cloudformation get-template --stack-name lambda-document-analysis-agent
 ```
 
+## Why `deploy.sh` creates three CloudFormation stacks
+
+Running `deploy.sh` leaves behind **three** stacks in CloudFormation, not one. Checking
+a real account after a deploy shows the creation order:
+
+| # | Stack | Created by | Contents |
+|---|-------|-----------|----------|
+| 1 | `aws-sam-cli-managed-default` | the `--resolve-s3` flag | `AWS::S3::Bucket` — staging bucket for uploaded artifacts |
+| 2 | `<stack-name>-<hash>-CompanionStack` | the `--resolve-image-repos` flag | `AWS::ECR::Repository` — holds the Lambda's container image |
+| 3 | `<stack-name>` (this project's actual app) | `--stack-name` + `template.yaml` | `DocumentAnalysisFunction`, its IAM role/permission, `DocumentBucket`, and the API Gateway REST API/deployment/stage |
+
+`deploy.sh` passes both `--resolve-s3` and `--resolve-image-repos` to `sam deploy`
+instead of pointing at pre-existing buckets/repos. Each flag means "if I don't have a
+place to stage this yet, create one for me first" — and each one it has to create
+becomes its own stack, built *before* the app stack that depends on it:
+
+1. **`--resolve-s3`** — SAM CLI checks for the managed staging bucket
+   (`aws-sam-cli-managed-default`). If missing, it creates that stack first: it needs
+   somewhere to upload the packaged template/artifacts before anything else can happen.
+2. **`--resolve-image-repos`** — this template's function uses `PackageType: Image` (a
+   container, not a zip), so SAM CLI needs an ECR repo to push the image to. If none
+   exists for this function, it auto-creates a "Managed ECR Repo Stack" — the
+   `...CompanionStack` (confirmed by its own `Description`:
+   `"AWS SAM CLI Managed ECR Repo Stack"`). It's named after the function's logical ID
+   hash because SAM ties one companion repo to one function.
+3. **Only once both exist** does SAM CLI build+push the image to the ECR repo, upload
+   the transformed template to the S3 bucket, and finally deploy the actual app —
+   `template.yaml`'s own stack, created last.
+
+So the dependency chain is: staging bucket → image repo → application stack. Stacks 1
+and 2 are SAM CLI's own bootstrap infrastructure — reusable across *any* SAM app
+deployed later in the same account/region, which is why deleting
+`aws-sam-cli-managed-default` is safe (SAM CLI just recreates it on the next deploy).
+Stack 3 is the only one this project's code actually defines, and the only one
+`cleanup.sh` tears down.
+
 ## How SAM finds this file
 
 `sam build`, `sam deploy`, `sam validate`, and `sam local invoke` all auto-discover
