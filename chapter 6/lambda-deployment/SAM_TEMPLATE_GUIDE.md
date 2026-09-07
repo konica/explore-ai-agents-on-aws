@@ -295,6 +295,53 @@ CloudFormation APIs — they differ in *how* you author that template (SAM: YAML
 shorthand for serverless resources; CDK: general-purpose code for anything), not in
 what actually deploys it.
 
+## Practicing safely: avoid the Console wizard trap
+
+For small hands-on projects, the biggest source of "I don't know what I created" is
+the Console's **Create/Launch wizards**, not the services themselves. Launching an EC2
+instance through the Console, for example, silently creates a security group, maybe a
+key pair, an EBS volume, an ENI — because the *wizard* decides what's needed on your
+behalf, and terminating the instance later doesn't know to undo those side-decisions.
+
+**The fix: only create resources through CloudFormation (or SAM, when it's
+Lambda-centric — see "SAM vs. plain CloudFormation" above), never through a Console
+"Create/Launch" wizard.** A CloudFormation template has no hidden behavior — every
+resource must be explicitly declared in `Resources:`, nothing appears that wasn't
+written there, and `delete-stack` removes exactly what the stack owns. It also doubles
+as documentation: reading the template tells you everything that exists, instead of
+having to remember what a wizard did on your behalf weeks earlier.
+
+### The workflow
+
+1. Write a small `template.yaml` per experiment (e.g. an EC2 instance + security group,
+   with every resource explicitly listed under `Resources:`).
+2. `aws cloudformation deploy --template-file template.yaml --stack-name my-experiment --capabilities CAPABILITY_IAM`
+3. When done: `aws cloudformation delete-stack --stack-name my-experiment` (+
+   `aws cloudformation wait stack-delete-complete ...`).
+
+Same two commands every time, regardless of what's inside — no need to remember
+whether a given experiment quietly created a VPC, an Elastic IP, or a CloudWatch
+alarm, because it's all sitting in the file that was written.
+
+### A built-in safety net, regardless of tool
+
+CloudFormation automatically tags every resource it creates with
+`aws:cloudformation:stack-name`. `aws cloudformation list-stack-resources
+--stack-name X` always shows the complete, authoritative list of what a stack owns,
+and the Console's **Tag Editor** can search a whole account for anything *not* tagged
+to a stack — a good periodic check for stragglers left over from before adopting this
+habit.
+
+### If raw CloudFormation feels tedious for something like EC2 + networking
+
+That's exactly the case **AWS CDK** is built for (same idea as "SAM vs. plain
+CloudFormation" above, just generalized beyond serverless): its L2 `ec2.Instance`
+construct gives sensible, secure defaults with far less boilerplate than hand-writing
+the VPC/security-group/EBS resources, while still compiling down to one CloudFormation
+stack with the same atomic `cdk deploy`/`cdk destroy`. Worth learning once comfortable
+with the raw-CloudFormation mental model — not a prerequisite for the atomic-cleanup
+benefit above.
+
 ## How SAM finds this file
 
 `sam build`, `sam deploy`, `sam validate`, and `sam local invoke` all auto-discover
