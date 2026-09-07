@@ -84,6 +84,72 @@ deployed later in the same account/region, which is why deleting
 Stack 3 is the only one this project's code actually defines, and the only one
 `cleanup.sh` tears down.
 
+## When to use SAM vs. plain CloudFormation
+
+SAM and CloudFormation aren't really either/or — a SAM template *is* a CloudFormation
+template, and `Resources:` accepts plain CFN resource types right alongside
+`AWS::Serverless::*` ones. The real question is whether SAM's shorthand and tooling
+earn their keep for a given project.
+
+### Use SAM when the workload is Lambda-centric
+
+SAM earns its keep specifically around serverless compute — Lambda, API Gateway, Step
+Functions, EventBridge rules, DynamoDB tables, SQS/SNS triggers. That's exactly this
+project's `template.yaml` (Lambda + API Gateway), which is why it's a good fit here:
+
+- **Less boilerplate** — `AWS::Serverless::Function` + an `Events: Api` block replaces
+  the Lambda function, IAM role, API Gateway REST API, deployment, stage, and invoke
+  permission you'd otherwise hand-write (see the expansion described above).
+- **Policy Templates** — `Policies: [S3ReadPolicy: {...}]` instead of writing out IAM
+  statements by hand (this template uses that for `DocumentBucket`).
+- **Local testing without deploying** — `sam local invoke`, `sam local start-api`,
+  `sam local start-lambda` emulate Lambda/API Gateway on your machine.
+- **Fast dev-loop iteration** — `sam sync --watch` pushes code changes in seconds
+  without a full CloudFormation update. Dev-only: it bypasses CloudFormation's safety
+  checks, so never use it for anything you'd call production.
+- **Built-in observability helpers** — `sam logs`, `sam traces` tail CloudWatch/X-Ray
+  without leaving the CLI.
+- **Rapid prototyping / learning**, like this book chapter — a working
+  Lambda-behind-API-Gateway app in ~60 lines instead of ~300.
+
+### Drop to raw CloudFormation when...
+
+1. **Most of the resources aren't serverless.** VPCs, subnets, route tables, EC2
+   fleets, RDS/Aurora clusters, ECS/EKS, Transit Gateway, load balancers, multi-account
+   IAM — none of these have a SAM shorthand, so you're writing plain CloudFormation
+   resource types regardless. At that point `Transform` buys nothing and just adds a
+   layer of macro-expansion "magic" for readers to understand. If Lambda is a small
+   piece bolted onto an otherwise non-serverless stack, keep the whole template in
+   plain CloudFormation (or CDK) rather than pulling in SAM for one function.
+2. **StackSets or cross-account/cross-region orchestration are needed.** SAM CLI has
+   no concept of StackSets — that's CloudFormation-only tooling.
+3. **The org restricts CloudFormation transforms/macros.** `Transform:
+   AWS::Serverless-2016-10-31` is a public, AWS-managed macro CloudFormation invokes at
+   deploy time. Some tightly regulated environments restrict which transforms are
+   allowed to run; raw CloudFormation sidesteps the question entirely.
+4. **Exact control over generated resources is required.** SAM's expansion is
+   opinionated — e.g. it auto-names the API Gateway stage by convention, and
+   `AutoPublishAlias` adds implicit Lambda versioning/alias behavior. When a property
+   the shorthand doesn't expose is needed (a specific IAM role name, a custom API
+   Gateway deployment strategy, etc.), write the underlying
+   `AWS::Lambda::Function`/`AWS::IAM::Role`/`AWS::ApiGateway::*` resources directly —
+   this can be done in the *same* template, mixed with SAM resources, since SAM is
+   additive.
+5. **The rest of the infrastructure is already on CDK (or Terraform).** Consistency
+   beats a marginally shorter Lambda definition — CDK's `NodejsFunction`/
+   `PythonFunction` L2 constructs give similar boilerplate reduction with the tool
+   already in use for VPCs, databases, etc. Don't mix SAM in just for the Lambda
+   pieces.
+6. **There's no Lambda/serverless compute at all** — e.g. a template that's purely S3 +
+   CloudFront + Route 53 for a static site. `Transform` and the SAM CLI toolchain
+   (SAM CLI installed, a `sam build` step, the managed staging bucket/ECR repo covered
+   above) add operational surface area for zero benefit when there's no function to
+   build or emulate locally.
+
+**Rule of thumb:** SAM when the deployable unit is "a Lambda function and its direct
+triggers," CloudFormation (or CDK) when it's "a mix of infrastructure where Lambda is
+just one resource among many."
+
 ## How SAM finds this file
 
 `sam build`, `sam deploy`, `sam validate`, and `sam local invoke` all auto-discover
