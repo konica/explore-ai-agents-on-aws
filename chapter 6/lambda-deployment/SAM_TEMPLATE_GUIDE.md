@@ -1,5 +1,53 @@
 # Writing `template.yaml` for AWS SAM
 
+## SAM vs. CloudFormation: how they relate
+
+**CloudFormation is the actual AWS service that creates infrastructure.** You write a
+template describing resources — `AWS::Lambda::Function`, `AWS::S3::Bucket`,
+`AWS::IAM::Role`, etc. — and CloudFormation creates/updates/deletes all of them
+together as one unit called a "stack." It's the foundation everything else in this
+project sits on.
+
+**SAM is a shorthand layer on top of CloudFormation**, purpose-built for serverless
+apps (Lambda, API Gateway, DynamoDB, Step Functions). Raw CloudFormation for a
+Lambda-behind-an-API is verbose — you'd hand-write the function, its execution role,
+the API Gateway REST API, the deployment, the stage, and the Lambda permission letting
+API Gateway invoke it. SAM lets you write one shorthand block instead.
+
+Look at this project's `template.yaml`:
+
+```yaml
+DocumentAnalysisFunction:
+  Type: AWS::Serverless::Function
+```
+
+`AWS::Serverless::Function` **is not a real CloudFormation resource type** —
+CloudFormation has no idea what it is on its own. That's what the top-of-file
+`Transform` line is for:
+
+```yaml
+Transform: AWS::Serverless-2016-10-31
+```
+
+This `Transform` tells CloudFormation: "before you do anything, run this template
+through the SAM macro first." The macro expands the one `AWS::Serverless::Function`
+block (plus its `Events: Api` block) into the *actual* underlying CloudFormation
+resources: an `AWS::Lambda::Function`, an `AWS::IAM::Role` built from the `Policies`
+list, an `AWS::ApiGateway::RestApi`, a deployment/stage, and the permission letting
+API Gateway call the function. Only *then* does CloudFormation deploy it.
+
+So a SAM template is just a CloudFormation template with a shorthand vocabulary and
+one extra line that unlocks it. `sam build`/`sam deploy` are convenience tooling on
+top: `sam build` compiles the container image, `sam deploy` uploads it to a staging
+S3 bucket (and ECR for the image) — this is the managed `aws-sam-cli-managed-default`
+bucket referenced by `deploy.sh`'s `--resolve-s3` flag — then hands the expanded
+template to CloudFormation to actually provision things. To see the fully-expanded raw
+CloudFormation for a deployed stack, run:
+
+```bash
+aws cloudformation get-template --stack-name lambda-document-analysis-agent
+```
+
 ## How SAM finds this file
 
 `sam build`, `sam deploy`, `sam validate`, and `sam local invoke` all auto-discover
