@@ -78,6 +78,70 @@ Docker build context: it must contain the Dockerfile plus everything its `COPY`/
 instructions reference. This project keeps `Dockerfile`, `app.py`, and
 `requirements.txt` together in `src/` for exactly that reason.
 
+## Common CloudFormation intrinsic functions
+
+SAM templates are CloudFormation templates, so the standard intrinsic functions work
+anywhere under `Resources` / `Outputs` / `Parameters`. The most common ones, using
+examples from this project's own `template.yaml`:
+
+### `!Ref`
+
+Returns a value depending on what you reference:
+- **Parameter** → the value passed in (or its default).
+- **Resource** → a resource-specific "primary" value — usually the physical ID, but
+  SAM resources sometimes return something more useful (e.g. `!Ref` on an
+  `AWS::Serverless::Function` returns the Lambda function's ARN).
+
+```yaml
+Architectures:
+  - !Ref Architecture          # → "arm64" or "x86_64" (the Parameter value)
+...
+- S3ReadPolicy:
+    BucketName: !Ref DocumentBucket   # → the bucket's physical name
+```
+
+Full (non-shorthand) form is `Ref: Architecture` — note it's `Ref`, not `Fn::Ref`;
+it's the one intrinsic function without an `Fn::` prefix.
+
+### `!GetAtt`
+
+Returns a **specific attribute** of a resource — for anything beyond what `!Ref`
+gives you (ARN, endpoint, DNS name, etc.). Shorthand: `!GetAtt LogicalName.AttributeName`.
+Full form: `Fn::GetAtt: [LogicalName, AttributeName]`. Available attributes are
+resource-type-specific — check the "Return values" section of each resource's
+CloudFormation docs page. Example: `!GetAtt DocumentBucket.Arn`.
+
+### `!Sub`
+
+String substitution — the one you'll use most for building ARNs/URLs. Two forms:
+
+1. **Implicit** — references anything already in scope (parameters, resource logical
+   IDs via `Ref`, `GetAtt` dotted paths, pseudo parameters):
+   ```yaml
+   Resource: !Sub "arn:aws:bedrock:*:${AWS::AccountId}:inference-profile/*"
+   ```
+2. **Explicit mapping** — pass a second argument to define/override variable names:
+   ```yaml
+   !Sub
+     - "https://${Domain}/path"
+     - Domain: !GetAtt MyApi.DomainName
+   ```
+
+`${AWS::AccountId}` and `${AWS::Region}` (used in this project's `Outputs.ApiEndpoint`)
+are **pseudo parameters** — built-in values CloudFormation fills in at deploy time
+(others: `AWS::StackName`, `AWS::Partition`, `AWS::NoValue`).
+
+### `!Join`
+
+Concatenates a list of values with a delimiter — the "manual" way to build a string
+before `!Sub` existed:
+```yaml
+!Join ["", ["arn:aws:s3:::", !Ref DocumentBucket, "/*"]]
+```
+Equivalent to `!Sub "arn:aws:s3:::${DocumentBucket}/*"`. Prefer `!Sub` for readability;
+reach for `!Join` mainly when the pieces are already a list you're building
+programmatically (e.g. output of `!GetAZs`, `!Split`, or `Fn::If`).
+
 ## Where to learn it
 
 1. **SAM template anatomy (start here)** —
