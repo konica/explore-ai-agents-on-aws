@@ -1,0 +1,246 @@
+{
+    "TemplateBody": {
+        "AWSTemplateFormatVersion": "2010-09-09",
+        "Description": "Deploy a Strands document analysis agent to Lambda (Chapter 6)",
+        "Parameters": {
+            "Architecture": {
+                "Type": "String",
+                "Default": "arm64",
+                "AllowedValues": [
+                    "arm64",
+                    "x86_64"
+                ],
+                "Description": "Lambda architecture. Use arm64 for Apple Silicon / Graviton, x86_64 for Intel."
+            }
+        },
+        "Outputs": {
+            "ApiEndpoint": {
+                "Description": "API Gateway endpoint URL",
+                "Value": {
+                    "Fn::Sub": "https://${ServerlessRestApi}.execute-api.${AWS::Region}.amazonaws.com/Prod/analyze/"
+                }
+            }
+        },
+        "Resources": {
+            "DocumentAnalysisFunction": {
+                "Type": "AWS::Lambda::Function",
+                "Metadata": {
+                    "DockerContext": "/c/Data/OSS/AI-Agents-on-AWS/chapter 6/lambda-deployment/src",
+                    "DockerTag": "v1",
+                    "Dockerfile": "Dockerfile",
+                    "SamResourceId": "DocumentAnalysisFunction"
+                },
+                "Properties": {
+                    "Code": {
+                        "ImageUri": "685394474162.dkr.ecr.us-east-1.amazonaws.com/lambdadocumentanalysisagent6e9a2a36/documentanalysisfunctiona70f48a2repo:documentanalysisfunction-d876c8e31347-v1"
+                    },
+                    "PackageType": "Image",
+                    "MemorySize": 1024,
+                    "Role": {
+                        "Fn::GetAtt": [
+                            "DocumentAnalysisFunctionRole",
+                            "Arn"
+                        ]
+                    },
+                    "Timeout": 900,
+                    "Environment": {
+                        "Variables": {
+                            "MODEL_ID": "us.anthropic.claude-sonnet-4-5-20250929-v1:0"
+                        }
+                    },
+                    "Tags": [
+                        {
+                            "Key": "lambda:createdBy",
+                            "Value": "SAM"
+                        }
+                    ],
+                    "Architectures": [
+                        {
+                            "Ref": "Architecture"
+                        }
+                    ]
+                }
+            },
+            "ServerlessRestApiProdStage": {
+                "Type": "AWS::ApiGateway::Stage",
+                "Properties": {
+                    "DeploymentId": {
+                        "Ref": "ServerlessRestApiDeploymenta1a9b0d55a"
+                    },
+                    "RestApiId": {
+                        "Ref": "ServerlessRestApi"
+                    },
+                    "StageName": "Prod"
+                }
+            },
+            "ServerlessRestApiDeploymenta1a9b0d55a": {
+                "Type": "AWS::ApiGateway::Deployment",
+                "Properties": {
+                    "Description": "RestApi deployment id: a1a9b0d55a2c1f42f066be419857c1db9ebc714f",
+                    "RestApiId": {
+                        "Ref": "ServerlessRestApi"
+                    },
+                    "StageName": "Stage"
+                }
+            },
+            "DocumentAnalysisFunctionAnalyzeContractPermissionProd": {
+                "Type": "AWS::Lambda::Permission",
+                "Properties": {
+                    "Action": "lambda:InvokeFunction",
+                    "FunctionName": {
+                        "Ref": "DocumentAnalysisFunction"
+                    },
+                    "Principal": "apigateway.amazonaws.com",
+                    "SourceArn": {
+                        "Fn::Sub": [
+                            "arn:aws:execute-api:${AWS::Region}:${AWS::AccountId}:${__ApiId__}/${__Stage__}/POST/analyze",
+                            {
+                                "__ApiId__": {
+                                    "Ref": "ServerlessRestApi"
+                                },
+                                "__Stage__": "*"
+                            }
+                        ]
+                    }
+                }
+            },
+            "ServerlessRestApi": {
+                "Type": "AWS::ApiGateway::RestApi",
+                "Properties": {
+                    "Body": {
+                        "info": {
+                            "version": "1.0",
+                            "title": {
+                                "Ref": "AWS::StackName"
+                            }
+                        },
+                        "paths": {
+                            "/analyze": {
+                                "post": {
+                                    "x-amazon-apigateway-integration": {
+                                        "httpMethod": "POST",
+                                        "type": "aws_proxy",
+                                        "uri": {
+                                            "Fn::Sub": "arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${DocumentAnalysisFunction.Arn}/invocations"
+                                        }
+                                    },
+                                    "responses": {}
+                                }
+                            }
+                        },
+                        "swagger": "2.0"
+                    }
+                }
+            },
+            "DocumentAnalysisFunctionRole": {
+                "Type": "AWS::IAM::Role",
+                "Properties": {
+                    "AssumeRolePolicyDocument": {
+                        "Version": "2012-10-17",
+                        "Statement": [
+                            {
+                                "Action": [
+                                    "sts:AssumeRole"
+                                ],
+                                "Effect": "Allow",
+                                "Principal": {
+                                    "Service": [
+                                        "lambda.amazonaws.com"
+                                    ]
+                                }
+                            }
+                        ]
+                    },
+                    "ManagedPolicyArns": [
+                        "arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole"
+                    ],
+                    "Policies": [
+                        {
+                            "PolicyName": "DocumentAnalysisFunctionRolePolicy0",
+                            "PolicyDocument": {
+                                "Statement": [
+                                    {
+                                        "Effect": "Allow",
+                                        "Action": [
+                                            "bedrock:InvokeModel",
+                                            "bedrock:InvokeModelWithResponseStream"
+                                        ],
+                                        "Resource": [
+                                            "arn:aws:bedrock:*::foundation-model/*",
+                                            {
+                                                "Fn::Sub": "arn:aws:bedrock:*:${AWS::AccountId}:inference-profile/*"
+                                            }
+                                        ]
+                                    },
+                                    {
+                                        "Effect": "Allow",
+                                        "Action": [
+                                            "aws-marketplace:ViewSubscriptions",
+                                            "aws-marketplace:Subscribe"
+                                        ],
+                                        "Resource": "*"
+                                    }
+                                ]
+                            }
+                        },
+                        {
+                            "PolicyName": "DocumentAnalysisFunctionRolePolicy1",
+                            "PolicyDocument": {
+                                "Statement": [
+                                    {
+                                        "Action": [
+                                            "s3:GetObject",
+                                            "s3:ListBucket",
+                                            "s3:GetBucketLocation",
+                                            "s3:GetObjectVersion",
+                                            "s3:GetLifecycleConfiguration"
+                                        ],
+                                        "Effect": "Allow",
+                                        "Resource": [
+                                            {
+                                                "Fn::Sub": [
+                                                    "arn:${AWS::Partition}:s3:::${bucketName}",
+                                                    {
+                                                        "bucketName": {
+                                                            "Ref": "DocumentBucket"
+                                                        }
+                                                    }
+                                                ]
+                                            },
+                                            {
+                                                "Fn::Sub": [
+                                                    "arn:${AWS::Partition}:s3:::${bucketName}/*",
+                                                    {
+                                                        "bucketName": {
+                                                            "Ref": "DocumentBucket"
+                                                        }
+                                                    }
+                                                ]
+                                            }
+                                        ]
+                                    }
+                                ]
+                            }
+                        }
+                    ],
+                    "Tags": [
+                        {
+                            "Key": "lambda:createdBy",
+                            "Value": "SAM"
+                        }
+                    ]
+                }
+            },
+            "DocumentBucket": {
+                "Type": "AWS::S3::Bucket",
+                "Metadata": {
+                    "SamResourceId": "DocumentBucket"
+                }
+            }
+        }
+    },
+    "StagesAvailable": [
+        "Original",
+        "Processed"
+    ]
+}

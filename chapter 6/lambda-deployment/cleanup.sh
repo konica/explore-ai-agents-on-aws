@@ -1,7 +1,7 @@
 #!/bin/bash
 set -e
 
-STACK_NAME="document-analysis-agent"
+STACK_NAME="lambda-document-analysis-agent"
 REGION="${AWS_REGION:-us-east-1}"
 
 echo "=== Cleaning up Lambda deployment ==="

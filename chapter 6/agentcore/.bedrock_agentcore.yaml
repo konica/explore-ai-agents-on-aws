@@ -11,12 +11,12 @@ agents:
     container_runtime: docker
     source_path: null
     aws:
-      execution_role: arn:aws:iam::685394474162:role/AmazonBedrockAgentCoreSDKRuntime-us-east-1-d9cd42ae63
-      execution_role_auto_create: false
+      execution_role: null
+      execution_role_auto_create: true
       account: '685394474162'
       region: us-east-1
-      ecr_repository: 685394474162.dkr.ecr.us-east-1.amazonaws.com/bedrock-agentcore-doc_analysis_agent
-      ecr_auto_create: false
+      ecr_repository: null
+      ecr_auto_create: true
       s3_path: null
       s3_auto_create: false
       network_configuration:
@@ -30,13 +30,13 @@ agents:
         idle_runtime_session_timeout: null
         max_lifetime: null
     bedrock_agentcore:
-      agent_id: doc_analysis_agent-CJB673E1Ml
-      agent_arn: arn:aws:bedrock-agentcore:us-east-1:685394474162:runtime/doc_analysis_agent-CJB673E1Ml
+      agent_id: null
+      agent_arn: null
       agent_session_id: null
     codebuild:
-      project_name: bedrock-agentcore-doc_analysis_agent-builder
-      execution_role: arn:aws:iam::685394474162:role/AmazonBedrockAgentCoreSDKCodeBuild-us-east-1-d9cd42ae63
-      source_bucket: bedrock-agentcore-codebuild-sources-685394474162-us-east-1
+      project_name: null
+      execution_role: null
+      source_bucket: null
     memory:
       mode: NO_MEMORY
       memory_id: null
