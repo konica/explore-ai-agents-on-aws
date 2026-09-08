@@ -1,3 +1,4 @@
 .sandbox
 .claude/worktrees/*
 chapter 6/multiagent/__pycache__/*
+.claude/settings.local.json

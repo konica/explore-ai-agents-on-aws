@@ -1,6 +1,13 @@
 {
+  "permissions": {
+    "allow": [
+      "Bash(jobs *)",
+      "Bash(sam --version)",
+      "Bash(python3 -c \"import samcli, os; print\\(os.path.dirname\\(samcli.__file__\\)\\)\")"
+    ]
+  },
+  "enableAllProjectMcpServers": true,
   "enabledMcpjsonServers": [
     "strands-agents"
-  ],
-  "enableAllProjectMcpServers": true
+  ]
 }
