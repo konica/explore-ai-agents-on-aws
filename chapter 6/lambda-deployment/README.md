@@ -10,6 +10,29 @@ A serverless Strands agent that analyzes contracts. POST a document, get back ex
 User → API Gateway → Lambda → Strands Agent → Bedrock (Claude) → Response
 ```
 
+### Request data flow
+
+```mermaid
+sequenceDiagram
+    participant C as Client (curl)
+    participant AG as API Gateway (Prod stage)
+    participant L as Lambda (DocumentAnalysisFunction)
+    participant B as Amazon Bedrock (Claude Sonnet)
+
+    C->>AG: POST /analyze {document_text}
+    AG->>L: proxy integration invoke
+    Note over L: cold start only: pull image from ECR,<br/>assume DocumentAnalysisFunctionRole
+    L->>B: bedrock:InvokeModel (via inference profile)
+    B-->>L: analysis text
+    L-->>AG: 200 {analysis}
+    AG-->>C: 200 {analysis}
+```
+
+Note: `template.yaml` also provisions an S3 bucket (`DocumentBucket`) with read access
+granted to the function, but the current `src/app.py` never reads from it — the
+document text comes directly in the request body, not from S3. It's provisioned
+infrastructure with no data flowing through it yet.
+
 ## Prerequisites
 
 1. **AWS CLI** configured (`aws sts get-caller-identity` should return your account ID)
