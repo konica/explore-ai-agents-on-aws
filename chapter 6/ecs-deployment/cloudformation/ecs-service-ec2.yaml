@@ -249,18 +249,31 @@ Resources:
 
   LoadBalancer:
     Type: AWS::ElasticLoadBalancingV2::LoadBalancer
+    Metadata:
+      com.aws.cloudformation.Context:
+        why: >-
+          no explicit Name: ALB names are capped at 32 chars by AWS, and an
+          AppName-derived "<AppName>-alb" string exceeded that for AppName
+          values as short as 29 chars (including this template's own
+          default -- this broke a real deploy). Letting CloudFormation
+          generate the name removes that ceiling entirely; a Name tag keeps
+          it identifiable in the console instead.
     Properties:
-      Name: !Sub ${AppName}-alb
       Type: application
       Scheme: internet-facing
       Subnets: !Ref PublicSubnetIds
       SecurityGroups:
         - !Ref AlbSecurityGroup
+      Tags:
+        - Key: Name
+          Value: !Sub ${AppName}-alb
 
   TargetGroup:
     Type: AWS::ElasticLoadBalancingV2::TargetGroup
+    Metadata:
+      com.aws.cloudformation.Context:
+        why: same 32-char AWS limit as LoadBalancer applies to target group names; same fix
     Properties:
-      Name: !Sub ${AppName}-tg
       TargetType: ip
       Protocol: HTTP
       Port: !Ref ContainerPort
@@ -269,6 +282,9 @@ Resources:
       HealthCheckIntervalSeconds: 30
       HealthyThresholdCount: 2
       UnhealthyThresholdCount: 3
+      Tags:
+        - Key: Name
+          Value: !Sub ${AppName}-tg
 
   Listener:
     Type: AWS::ElasticLoadBalancingV2::Listener
