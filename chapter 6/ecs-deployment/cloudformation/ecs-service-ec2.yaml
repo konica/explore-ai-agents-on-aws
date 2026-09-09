@@ -288,9 +288,14 @@ Resources:
           UserData joins each instance to Cluster by name via
           /etc/ecs/ecs.config; AssociatePublicIpAddress so instances can pull
           the image from ECR and reach Bedrock/CloudWatch without a NAT
-          gateway (same public-subnet tradeoff ecs-service.yaml makes)
+          gateway (same public-subnet tradeoff ecs-service.yaml makes).
+          ECS_ENABLE_TASK_ENI=true is required for the EC2 launch type to
+          place awsvpc-mode tasks at all; without it the agent registers the
+          instance but never considers it eligible for this task, so the
+          task sits PENDING and the Service never stabilizes.
         must:
           - the ECS_CLUSTER value in UserData must match Cluster's ClusterName exactly
+          - keep ECS_ENABLE_TASK_ENI=true; required for awsvpc + EC2 launch type
     Properties:
       LaunchTemplateData:
         ImageId: !Ref EcsAmiId
@@ -306,6 +311,7 @@ Resources:
           Fn::Base64: !Sub |
             #!/bin/bash
             echo "ECS_CLUSTER=${AppName}-cluster" >> /etc/ecs/ecs.config
+            echo "ECS_ENABLE_TASK_ENI=true" >> /etc/ecs/ecs.config
 
   AutoScalingGroup:
     Type: AWS::AutoScaling::AutoScalingGroup
