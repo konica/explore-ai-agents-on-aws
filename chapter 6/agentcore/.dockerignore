@@ -1,0 +1,12 @@
+# Excluded from the Docker build context used by both `docker build` and
+# CDK's AgentRuntimeArtifact.fromAsset() -- without this, the cdk/ subfolder's
+# own cdk.out/ build output gets copied into the image build context, which
+# (since cdk.out lives inside the very directory being packaged) recursively
+# includes itself until the copy fails with ENAMETOOLONG.
+cdk/
+*.ipynb
+*.html
+.bedrock_agentcore.yaml
+__pycache__/
+*.pyc
+.venv/

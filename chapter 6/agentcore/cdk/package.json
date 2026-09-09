@@ -1,0 +1,23 @@
+{
+  "name": "doc-analysis-agent-cdk",
+  "version": "0.1.0",
+  "private": true,
+  "bin": {
+    "doc-analysis-agent": "bin/doc-analysis-agent.js"
+  },
+  "scripts": {
+    "build": "tsc",
+    "watch": "tsc -w",
+    "cdk": "cdk"
+  },
+  "devDependencies": {
+    "@types/node": "^20",
+    "aws-cdk": "^2.268.0",
+    "ts-node": "^10.9.0",
+    "typescript": "~5.6.0"
+  },
+  "dependencies": {
+    "aws-cdk-lib": "^2.268.0",
+    "constructs": "^10.0.0"
+  }
+}
