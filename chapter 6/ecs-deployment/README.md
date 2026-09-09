@@ -82,3 +82,25 @@ groups, ECR repo, IAM roles, and CloudWatch log group.
 Fargate pricing is per-second for the vCPU and memory your task uses. With the
 default config (1 vCPU, 2 GB, 1 task), expect roughly $0.05/hour while running.
 The ALB adds a small hourly charge. Run `./cleanup.sh` when done testing.
+
+## Alternative: Deploy via CloudFormation
+
+`deploy.sh`/`cleanup.sh` above call the AWS CLI directly and aren't tracked in
+any stack. `deploy-cfn.sh`/`cleanup-cfn.sh` do the same deployment through two
+CloudFormation stacks instead — `hospital-scheduling-agent-ecr` (just the ECR
+repo, so it exists before the image is pushed) and
+`hospital-scheduling-agent-service` (IAM roles, cluster, ALB, task definition,
+service) — defined in [`cloudformation/`](cloudformation/). This gets you
+drift-visible, update-in-place, single-command teardown at the cost of the
+CLI-native scripts' immediacy.
+
+```bash
+chmod +x deploy-cfn.sh cleanup-cfn.sh
+./deploy-cfn.sh   # deploys the ECR stack, builds/pushes the image, deploys the service stack
+./cleanup-cfn.sh  # deletes the service stack, then the ECR stack
+```
+
+Note the log group differs from the CLI path: `/ecs/hospital-scheduling-agent`
+(not `/ecs/scheduling-agent`). Use only one deployment method at a time — both
+create an ECR repo named `hospital-scheduling-agent` and will collide if run
+together.
