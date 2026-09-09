@@ -4,6 +4,7 @@ A FastAPI application that hosts a Strands agent for coordinating
 surgical scheduling across provider calendars and hospital systems.
 """
 
+import json
 import logging
 import os
 from pathlib import Path
@@ -14,7 +15,30 @@ from pydantic import BaseModel
 from strands import Agent, tool
 from strands.models.bedrock import BedrockModel
 
-logging.basicConfig(level=logging.INFO)
+
+class OneLineJsonFormatter(logging.Formatter):
+    """Serializes each record (traceback included) to a single JSON line.
+
+    ECS/Docker forward container stdout to CloudWatch one line at a time, so
+    a multi-line traceback normally lands as a separate log event per line.
+    JSON-encoding the whole record escapes embedded newlines, keeping the
+    full traceback in one CloudWatch log event.
+    """
+
+    def format(self, record: logging.LogRecord) -> str:
+        message = record.getMessage()
+        if record.exc_info:
+            message = f"{message}\n{self.formatException(record.exc_info)}"
+        return json.dumps({
+            "level": record.levelname,
+            "logger": record.name,
+            "message": message,
+        })
+
+
+_handler = logging.StreamHandler()
+_handler.setFormatter(OneLineJsonFormatter())
+logging.basicConfig(level=logging.INFO, handlers=[_handler])
 logger = logging.getLogger("hospital_scheduling_agent")
 
 app = FastAPI(title="Hospital Scheduling Agent")
