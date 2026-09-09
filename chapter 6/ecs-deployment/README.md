@@ -92,7 +92,8 @@ repo, so it exists before the image is pushed) and
 `hospital-scheduling-agent-service` (IAM roles, cluster, ALB, task definition,
 service) — defined in [`cloudformation/`](cloudformation/). This gets you
 drift-visible, update-in-place, single-command teardown at the cost of the
-CLI-native scripts' immediacy.
+CLI-native scripts' immediacy. New to ECS's cluster/service/task-definition/role
+terminology? See [`cloudformation/ECS-CONCEPTS.md`](cloudformation/ECS-CONCEPTS.md).
 
 ```bash
 chmod +x deploy-cfn.sh cleanup-cfn.sh
