@@ -8,7 +8,11 @@ CPU=1024        # 1 vCPU
 MEMORY=2048     # 2 GB
 DESIRED_COUNT=1
 MODEL_ID="us.anthropic.claude-sonnet-4-5-20250929-v1:0"
-IMAGE_TAG="latest"
+# Unique per run (not "latest"): the TaskDefinition's Image property must
+# actually change for CloudFormation to detect a diff and update the ECS
+# service. A fixed tag makes every redeploy an empty changeset -- the new
+# image gets pushed to ECR but the running task is never replaced.
+IMAGE_TAG="$(date +%Y%m%d%H%M%S)"
 
 ECR_STACK="${APP_NAME}-ecr"
 SERVICE_STACK="${APP_NAME}-service"
