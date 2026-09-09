@@ -96,6 +96,9 @@ CLI-native scripts' immediacy. New to ECS's cluster/service/task-definition/role
 terminology? See [`cloudformation/ECS-CONCEPTS.md`](cloudformation/ECS-CONCEPTS.md).
 Wondering why there's an ALB and two security groups? See
 [`cloudformation/LOAD-BALANCER-AND-SECURITY-GROUPS.md`](cloudformation/LOAD-BALANCER-AND-SECURITY-GROUPS.md).
+Want to know how a request actually flows through the Listener/TargetGroup,
+or how the ALB and container health checks interact? See
+[`cloudformation/REQUEST-AND-HEALTH-CHECK-FLOW.md`](cloudformation/REQUEST-AND-HEALTH-CHECK-FLOW.md).
 
 ```bash
 chmod +x deploy-cfn.sh cleanup-cfn.sh
