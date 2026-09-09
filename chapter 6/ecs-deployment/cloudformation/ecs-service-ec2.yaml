@@ -1,0 +1,411 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: >-
+  Hospital scheduling agent on ECS EC2 launch type behind an internet-facing
+  ALB — same app/architecture as ecs-service.yaml, but tasks run on
+  self-managed EC2 instances (an Auto Scaling Group) instead of Fargate.
+  Deploy after ecr-repository.yaml and an image push.
+
+Metadata:
+  AWSToolsMetrics:
+    AWSAgentToolkit: aws-cloudformation@2
+  com.aws.cloudformation.Context:
+    arch: >-
+      Browser -> ALB:80 -> ECS task (awsvpc ENI, on an EC2 container
+      instance) -> Bedrock (Claude). Single AZ pair, HTTP only (lab/demo
+      scope, not production). Same ECR image as ecs-service.yaml; only the
+      capacity source differs (EC2 instances vs Fargate).
+    must:
+      - task security group only accepts inbound from the ALB security group
+      - both public subnets must route 0.0.0.0/0 through an Internet Gateway (ALB + instance internet access)
+      - AppName must differ from ecs-service.yaml's so cluster/ALB/log group names don't collide if both are deployed at once
+
+Parameters:
+  AppName:
+    Type: String
+    Default: hospital-scheduling-agent-ec2
+    Description: Prefix for resource names in this stack. Must match the AppName used for ecr-repository.yaml (the ECR repo itself is shared with ecs-service.yaml).
+    AllowedPattern: '[a-zA-Z0-9-]*'
+    MinLength: 2
+    MaxLength: 60
+
+  EcrRepositoryUri:
+    Type: String
+    Description: >-
+      Full ECR repository URI (from ecr-repository.yaml's RepositoryUri output),
+      e.g. 123456789012.dkr.ecr.us-east-1.amazonaws.com/hospital-scheduling-agent
+
+  ImageTag:
+    Type: String
+    Default: latest
+    Description: Tag of the image already pushed to EcrRepositoryUri.
+
+  ModelId:
+    Type: String
+    Default: us.anthropic.claude-sonnet-4-5-20250929-v1:0
+    Description: Bedrock model/inference-profile ID the agent invokes.
+
+  VpcId:
+    Type: AWS::EC2::VPC::Id
+    Description: VPC to deploy into (must have an Internet Gateway attached).
+
+  PublicSubnetIds:
+    Type: List<AWS::EC2::Subnet::Id>
+    Description: >-
+      At least 2 subnets, in different AZs, whose route table sends 0.0.0.0/0
+      through the VPC's Internet Gateway. Required by the internet-facing ALB,
+      and used here for the container instances too (so they can reach ECR/
+      Bedrock/CloudWatch without a NAT gateway).
+
+  ContainerPort:
+    Type: Number
+    Default: 8080
+    MinValue: 1
+    MaxValue: 65535
+    Description: Port the agent's container listens on.
+
+  ContainerCpu:
+    Type: Number
+    Default: 1024
+    MinValue: 128
+    Description: >-
+      Task-level CPU units, used as an ECS placement reservation (not a
+      Fargate CPU/memory pairing — EC2 launch type has no fixed table).
+
+  ContainerMemory:
+    Type: Number
+    Default: 2048
+    MinValue: 128
+    Description: Task-level memory (MiB) reservation used for ECS placement onto an instance with enough free memory.
+
+  DesiredCount:
+    Type: Number
+    Default: 1
+    MinValue: 1
+    Description: Number of tasks to run.
+
+  InstanceType:
+    Type: String
+    Default: t3.medium
+    Description: >-
+      EC2 instance type for container instances. Must be large enough for
+      ContainerCpu/ContainerMemory plus OS + ECS agent overhead (t3.medium =
+      2 vCPU / 4 GiB comfortably fits the 1 vCPU / 2 GiB default task).
+
+  DesiredCapacity:
+    Type: Number
+    Default: 1
+    MinValue: 1
+    Description: Number of EC2 container instances to run in the Auto Scaling Group.
+
+  MinSize:
+    Type: Number
+    Default: 1
+    MinValue: 0
+    Description: Auto Scaling Group minimum instance count.
+
+  MaxSize:
+    Type: Number
+    Default: 2
+    MinValue: 1
+    Description: Auto Scaling Group maximum instance count.
+
+  EcsAmiId:
+    Type: AWS::SSM::Parameter::Value<AWS::EC2::Image::Id>
+    Default: /aws/service/ecs/optimized-ami/amazon-linux-2023/recommended/image_id
+    Description: >-
+      SSM public parameter resolving to the latest ECS-optimized AL2023 AMI
+      for this region — no need to hardcode or look up an AMI ID.
+
+Resources:
+  ExecutionRole:
+    Type: AWS::IAM::Role
+    Metadata:
+      com.aws.cloudformation.Context:
+        why: ECS uses this to pull the image from ECR & write container logs; standard AWS managed policy, no custom perms needed
+        mutable: change-with-constraints
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: ecs-tasks.amazonaws.com
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AmazonECSTaskExecutionRolePolicy
+
+  TaskRole:
+    Type: AWS::IAM::Role
+    Metadata:
+      com.aws.cloudformation.Context:
+        why: assumed by the agent code inside the container; scoped to InvokeModel only, no other AWS access
+        must:
+          - keep scoped to bedrock:InvokeModel*; do not widen to bedrock:* or Resource "*" beyond foundation-model/inference-profile
+        mutable: review-required
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: ecs-tasks.amazonaws.com
+            Action: sts:AssumeRole
+      Policies:
+        - PolicyName: BedrockAccess
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - bedrock:InvokeModel
+                  - bedrock:InvokeModelWithResponseStream
+                Resource:
+                  - arn:aws:bedrock:*::foundation-model/*
+                  - !Sub arn:aws:bedrock:*:${AWS::AccountId}:inference-profile/*
+
+  InstanceRole:
+    Type: AWS::IAM::Role
+    Metadata:
+      com.aws.cloudformation.Context:
+        why: >-
+          assumed by the EC2 container instances (not the task/app code) so
+          the ECS agent can register the instance with the cluster; SSM policy
+          added for keyless Session Manager access instead of an SSH key pair
+        mutable: change-with-constraints
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: ec2.amazonaws.com
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AmazonEC2ContainerServiceforEC2Role
+        - arn:aws:iam::aws:policy/AmazonSSMManagedInstanceCore
+
+  InstanceProfile:
+    Type: AWS::IAM::InstanceProfile
+    Properties:
+      Roles:
+        - !Ref InstanceRole
+
+  Cluster:
+    Type: AWS::ECS::Cluster
+    Properties:
+      ClusterName: !Sub ${AppName}-cluster
+
+  LogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub /ecs/${AppName}
+      RetentionInDays: 30
+
+  AlbSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Metadata:
+      com.aws.cloudformation.Context:
+        why: fronts the internet-facing ALB; 0.0.0.0/0:80 is intentional (public HTTP entrypoint), not a finding
+    Properties:
+      GroupDescription: !Sub ALB security group for ${AppName}
+      VpcId: !Ref VpcId
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 80
+          ToPort: 80
+          CidrIp: 0.0.0.0/0
+
+  EcsSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Metadata:
+      com.aws.cloudformation.Context:
+        why: >-
+          attached to each task's own ENI (NetworkMode=awsvpc, same as
+          Fargate) via the service's NetworkConfiguration, NOT to the EC2
+          container instance's primary ENI
+        must:
+          - only accept inbound from AlbSecurityGroup; never widen to 0.0.0.0/0
+    Properties:
+      GroupDescription: !Sub ECS tasks security group for ${AppName}
+      VpcId: !Ref VpcId
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: !Ref ContainerPort
+          ToPort: !Ref ContainerPort
+          SourceSecurityGroupId: !Ref AlbSecurityGroup
+
+  InstanceSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Metadata:
+      com.aws.cloudformation.Context:
+        why: >-
+          attached to the EC2 container instances' primary ENI; no ingress
+          rules needed since ALB traffic reaches tasks via their own
+          EcsSecurityGroup-protected ENI, and instance access is via SSM
+          Session Manager (outbound-initiated, no inbound port required)
+    Properties:
+      GroupDescription: !Sub ECS container instances security group for ${AppName}
+      VpcId: !Ref VpcId
+
+  LoadBalancer:
+    Type: AWS::ElasticLoadBalancingV2::LoadBalancer
+    Properties:
+      Name: !Sub ${AppName}-alb
+      Type: application
+      Scheme: internet-facing
+      Subnets: !Ref PublicSubnetIds
+      SecurityGroups:
+        - !Ref AlbSecurityGroup
+
+  TargetGroup:
+    Type: AWS::ElasticLoadBalancingV2::TargetGroup
+    Properties:
+      Name: !Sub ${AppName}-tg
+      TargetType: ip
+      Protocol: HTTP
+      Port: !Ref ContainerPort
+      VpcId: !Ref VpcId
+      HealthCheckPath: /health
+      HealthCheckIntervalSeconds: 30
+      HealthyThresholdCount: 2
+      UnhealthyThresholdCount: 3
+
+  Listener:
+    Type: AWS::ElasticLoadBalancingV2::Listener
+    Properties:
+      LoadBalancerArn: !Ref LoadBalancer
+      Protocol: HTTP
+      Port: 80
+      DefaultActions:
+        - Type: forward
+          TargetGroupArn: !Ref TargetGroup
+
+  LaunchTemplate:
+    Type: AWS::EC2::LaunchTemplate
+    Metadata:
+      com.aws.cloudformation.Context:
+        why: >-
+          UserData joins each instance to Cluster by name via
+          /etc/ecs/ecs.config; AssociatePublicIpAddress so instances can pull
+          the image from ECR and reach Bedrock/CloudWatch without a NAT
+          gateway (same public-subnet tradeoff ecs-service.yaml makes)
+        must:
+          - the ECS_CLUSTER value in UserData must match Cluster's ClusterName exactly
+    Properties:
+      LaunchTemplateData:
+        ImageId: !Ref EcsAmiId
+        InstanceType: !Ref InstanceType
+        IamInstanceProfile:
+          Arn: !GetAtt InstanceProfile.Arn
+        NetworkInterfaces:
+          - DeviceIndex: 0
+            AssociatePublicIpAddress: true
+            Groups:
+              - !Ref InstanceSecurityGroup
+        UserData:
+          Fn::Base64: !Sub |
+            #!/bin/bash
+            echo "ECS_CLUSTER=${AppName}-cluster" >> /etc/ecs/ecs.config
+
+  AutoScalingGroup:
+    Type: AWS::AutoScaling::AutoScalingGroup
+    Properties:
+      AutoScalingGroupName: !Sub ${AppName}-asg
+      VPCZoneIdentifier: !Ref PublicSubnetIds
+      LaunchTemplate:
+        LaunchTemplateId: !Ref LaunchTemplate
+        Version: !GetAtt LaunchTemplate.LatestVersionNumber
+      MinSize: !Ref MinSize
+      MaxSize: !Ref MaxSize
+      DesiredCapacity: !Ref DesiredCapacity
+      Tags:
+        - Key: Name
+          Value: !Sub ${AppName}-instance
+          PropagateAtLaunch: true
+
+  TaskDefinition:
+    Type: AWS::ECS::TaskDefinition
+    Metadata:
+      com.aws.cloudformation.Context:
+        why: single-container task; image tag is a parameter so re-running the deploy script after a new push updates this via stack update
+        mutable: free-to-tune
+    Properties:
+      Family: !Sub ${AppName}-task
+      NetworkMode: awsvpc
+      RequiresCompatibilities: [EC2]
+      Cpu: !Ref ContainerCpu
+      Memory: !Ref ContainerMemory
+      ExecutionRoleArn: !GetAtt ExecutionRole.Arn
+      TaskRoleArn: !GetAtt TaskRole.Arn
+      ContainerDefinitions:
+        - Name: !Ref AppName
+          Image: !Sub ${EcrRepositoryUri}:${ImageTag}
+          Essential: true
+          PortMappings:
+            - ContainerPort: !Ref ContainerPort
+              Protocol: tcp
+          Environment:
+            - Name: MODEL_ID
+              Value: !Ref ModelId
+          HealthCheck:
+            Command:
+              - CMD-SHELL
+              - !Sub curl -f http://localhost:${ContainerPort}/health || exit 1
+            Interval: 30
+            Timeout: 5
+            Retries: 3
+            StartPeriod: 60
+          LogConfiguration:
+            LogDriver: awslogs
+            Options:
+              awslogs-group: !Ref LogGroup
+              awslogs-region: !Ref AWS::Region
+              awslogs-stream-prefix: agent
+
+  Service:
+    Type: AWS::ECS::Service
+    DependsOn:
+      - Listener
+      - AutoScalingGroup
+    Metadata:
+      com.aws.cloudformation.Context:
+        why: >-
+          LaunchType=EC2 places tasks on the Auto Scaling Group's instances
+          instead of Fargate; NetworkMode stays awsvpc so each task still
+          gets its own ENI (registered with TargetGroup by IP, same as
+          Fargate) — no AssignPublicIp here, that property is Fargate-only
+        must:
+          - DependsOn AutoScalingGroup; CloudFormation can't wait for an instance to actually register with the cluster, only for the ASG resource to be created, so the service may take a few extra minutes to stabilize on first deploy while an instance boots and joins
+    Properties:
+      ServiceName: !Sub ${AppName}-service
+      Cluster: !Ref Cluster
+      TaskDefinition: !Ref TaskDefinition
+      DesiredCount: !Ref DesiredCount
+      LaunchType: EC2
+      HealthCheckGracePeriodSeconds: 120
+      NetworkConfiguration:
+        AwsvpcConfiguration:
+          Subnets: !Ref PublicSubnetIds
+          SecurityGroups:
+            - !Ref EcsSecurityGroup
+      LoadBalancers:
+        - ContainerName: !Ref AppName
+          ContainerPort: !Ref ContainerPort
+          TargetGroupArn: !Ref TargetGroup
+
+Outputs:
+  AlbDnsName:
+    Description: Public ALB DNS name — open http://<this> in a browser
+    Value: !GetAtt LoadBalancer.DNSName
+  ClusterName:
+    Description: ECS cluster name
+    Value: !Ref Cluster
+  ServiceName:
+    Description: ECS service name
+    Value: !GetAtt Service.Name
+  LogGroupName:
+    Description: CloudWatch log group (aws logs tail <this> --follow)
+    Value: !Ref LogGroup
+  AutoScalingGroupName:
+    Description: Auto Scaling Group running the container instances
+    Value: !Ref AutoScalingGroup
