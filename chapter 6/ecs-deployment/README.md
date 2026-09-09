@@ -113,3 +113,38 @@ Each run of `deploy-cfn.sh` pushes the image under a fresh timestamp tag
 otherwise CloudFormation sees no diff on redeploy and silently leaves the old
 task running. This means repeated deploys accumulate tagged images in ECR;
 `./cleanup-cfn.sh` removes them all when you're done.
+
+### EC2 launch type variant
+
+`deploy-cfn.sh`/`ecs-service.yaml` above run tasks on Fargate. `deploy-cfn-ec2.sh`/
+`ecs-service-ec2.yaml` deploy the same app on the **EC2 launch type** instead —
+tasks run on an Auto Scaling Group of EC2 container instances that you own,
+rather than AWS-managed Fargate capacity. It reuses the same ECR
+repo/image as the Fargate path (`hospital-scheduling-agent-ecr`) and deploys
+into its own stack (`hospital-scheduling-agent-ec2-service`), so both variants
+can run side by side without colliding. New to how the two launch types
+differ, or what an ENI is and why both stacks depend on one per task? See
+[`cloudformation/FARGATE-VS-EC2-AND-ENI.md`](cloudformation/FARGATE-VS-EC2-AND-ENI.md).
+
+```bash
+chmod +x deploy-cfn-ec2.sh cleanup-cfn-ec2.sh
+./deploy-cfn-ec2.sh   # deploys/reuses the shared ECR stack, builds/pushes the image, deploys the EC2 service stack
+./cleanup-cfn-ec2.sh  # deletes only the EC2 service stack (leaves the shared ECR stack for the Fargate variant)
+```
+
+Differences worth knowing:
+
+- **Cost model**: EC2 instances bill per-hour whether idle or busy (default
+  `t3.medium`, ~1 running instance), unlike Fargate's per-second-per-task
+  billing. Run `./cleanup-cfn-ec2.sh` when you're done, or scale `MinSize`
+  down, to stop paying for idle instances.
+- **First-deploy timing**: an instance has to boot, join the cluster, and
+  only then can a task place onto it — expect the service to take a few
+  minutes longer to stabilize than the Fargate path, especially on the very
+  first deploy.
+- **Instance access**: instances are reachable via AWS Systems Manager
+  Session Manager (no SSH key pair, no open inbound port) if you need to
+  inspect one directly — `aws ssm start-session --target <instance-id>`.
+
+Once both stacks are torn down, run `./cleanup-cfn.sh` to remove the shared
+ECR repository stack.
