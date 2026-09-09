@@ -6,6 +6,19 @@ in `eks-cluster.yaml` and `deploy-cfn.sh` (`Cluster`, `FargateProfile`,
 one-to-one. Here's how they relate, using the same restaurant analogy as
 [`../../ecs-deployment/cloudformation/ECS-CONCEPTS.md`](../../ecs-deployment/cloudformation/ECS-CONCEPTS.md).
 
+## The subnet gotcha that trips up everyone coming from ECS
+
+ECS Fargate tasks can run in a **public** subnet (`AssignPublicIp: ENABLED`,
+what `ecs-deployment` does). **EKS Fargate profiles cannot** —
+`AWS::EKS::FargateProfile` rejects public subnets outright, failing with
+`"...is not a private subnet"`. There's no flag to opt out of this; the pod's
+subnet must have its default route through a NAT Gateway, not an Internet
+Gateway. Since a default VPC's subnets are all public, `eks-network.yaml`
+provisions a dedicated VPC with an actual public/private split and a NAT
+Gateway before `eks-cluster.yaml` ever runs. (`deploy.sh`, the `eksctl`
+path, doesn't hit this because `eksctl create cluster --fargate` already
+provisions this same kind of dedicated VPC automatically.)
+
 ## The restaurant analogy
 
 | EKS concept | Restaurant analogy | What it actually is | ECS equivalent |
@@ -41,9 +54,10 @@ Cluster (the building + front desk)
 
 ## Why CloudFormation stops at the cluster
 
-`eks-cluster.yaml` manages everything that's a plain *AWS* resource:
-the cluster, Fargate profiles, the two base IAM roles, and the OIDC
-provider. It deliberately does **not** manage:
+`eks-network.yaml` and `eks-cluster.yaml` manage everything that's a plain
+*AWS* resource: the VPC/subnets/NAT Gateway, the cluster, Fargate profiles,
+the two base IAM roles, and the OIDC provider. They deliberately do **not**
+manage:
 
 - The Kubernetes `Deployment`/`Service`/`Ingress` — CloudFormation has no
   resource types for Kubernetes API objects (unlike, say, AWS CDK's `eks`
@@ -65,6 +79,14 @@ CloudFormation to compute it).
 
 ## Where to see this in code
 
+In [`eks-network.yaml`](eks-network.yaml):
+
+- `PublicSubnet1` / `PublicSubnet2` — routed through the `InternetGateway`;
+  host the NAT Gateway and (via their `kubernetes.io/role/elb` tag, which
+  the AWS Load Balancer Controller auto-discovers) the ALB
+- `PrivateSubnet1` / `PrivateSubnet2` — routed through the `NatGateway`;
+  the only subnets `eks-cluster.yaml`'s Fargate profiles are allowed to use
+
 In [`eks-cluster.yaml`](eks-cluster.yaml):
 
 - `ClusterRole` — has the AWS-managed `AmazonEKSClusterPolicy`
@@ -75,7 +97,7 @@ In [`eks-cluster.yaml`](eks-cluster.yaml):
   running `deploy-cfn.sh` gets `kubectl` access with no extra
   `aws-auth` ConfigMap step
 - `FargateProfileDefault` / `FargateProfileApp` — which namespaces get
-  serverless compute
+  serverless compute, using `PrivateSubnetIds` from `eks-network.yaml`
 - `OidcProvider` — what makes IRSA possible
 
 In [`../deploy-cfn.sh`](../deploy-cfn.sh): the IRSA role creation, the

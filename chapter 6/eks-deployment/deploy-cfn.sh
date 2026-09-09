@@ -10,6 +10,7 @@ MODEL_ID="us.anthropic.claude-sonnet-4-5-20250929-v1:0"
 IMAGE_TAG="latest"
 
 ECR_STACK="${APP_NAME}-ecr"
+NETWORK_STACK="${APP_NAME}-eks-network"
 CLUSTER_STACK="${APP_NAME}-eks-cluster"
 TEMPLATE_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/cloudformation" && pwd)"
 
@@ -33,8 +34,8 @@ echo "Account: ${ACCOUNT_ID}"
 echo ""
 
 # ── Prerequisites ──────────────────────────────────────────────────
-# No eksctl here: eks-cluster.yaml (CloudFormation) owns the cluster,
-# Fargate profiles, and base IAM roles instead.
+# No eksctl here: eks-network.yaml/eks-cluster.yaml (CloudFormation) own the
+# VPC, cluster, Fargate profiles, and base IAM roles instead.
 echo "Checking prerequisites..."
 for cmd in aws docker kubectl helm envsubst; do
   if ! command -v "$cmd" &>/dev/null; then
@@ -69,46 +70,27 @@ docker tag "${APP_NAME}:${IMAGE_TAG}" "${ECR_REPO}:${IMAGE_TAG}"
 docker push "${ECR_REPO}:${IMAGE_TAG}"
 echo "  Image pushed: ${ECR_REPO}:${IMAGE_TAG}"
 
-# ── Step 3: Discover a VPC and its public subnets ───────────────────
-echo "Step 3/9: Discovering VPC and public subnets..."
-VPC_ID=$(aws ec2 describe-vpcs --filters Name=isDefault,Values=true \
-  --region "${REGION}" --query 'Vpcs[0].VpcId' --output text)
+# ── Step 3: Deploy the network stack ─────────────────────────────────
+# A default VPC's subnets are all public, but AWS::EKS::FargateProfile
+# rejects public subnets outright, so this stack builds a dedicated
+# VPC with a proper public/private split instead of reusing the default VPC.
+echo "Step 3/9: Deploying network stack (${NETWORK_STACK})..."
+aws cloudformation deploy \
+  --stack-name "${NETWORK_STACK}" \
+  --template-file "${TEMPLATE_DIR}/eks-network.yaml" \
+  --parameter-overrides "AppName=${APP_NAME}" \
+  --region "${REGION}" \
+  --no-fail-on-empty-changeset
 
-IGW_ID=$(aws ec2 describe-internet-gateways \
-  --filters Name=attachment.vpc-id,Values="${VPC_ID}" \
-  --region "${REGION}" --query 'InternetGateways[0].InternetGatewayId' --output text)
-
-# Find subnets whose route table sends 0.0.0.0/0 through the IGW.
-# The ALB (and Fargate's ECR/CloudWatch access) require this.
-PUBLIC_SUBNETS=()
-ALL_SUBNETS=$(aws ec2 describe-subnets --filters Name=vpc-id,Values="${VPC_ID}" Name=default-for-az,Values=true \
-  --region "${REGION}" --query 'Subnets[*].SubnetId' --output text)
-for SID in ${ALL_SUBNETS}; do
-  RT_ID=$(aws ec2 describe-route-tables \
-    --filters Name=association.subnet-id,Values="${SID}" \
-    --region "${REGION}" --query 'RouteTables[0].RouteTableId' --output text 2>/dev/null)
-  if [ -z "${RT_ID}" ] || [ "${RT_ID}" = "None" ]; then
-    RT_ID=$(aws ec2 describe-route-tables \
-      --filters Name=vpc-id,Values="${VPC_ID}" Name=association.main,Values=true \
-      --region "${REGION}" --query 'RouteTables[0].RouteTableId' --output text)
-  fi
-  GW=$(aws ec2 describe-route-tables --route-table-ids "${RT_ID}" \
-    --region "${REGION}" \
-    --query "RouteTables[0].Routes[?DestinationCidrBlock=='0.0.0.0/0'].GatewayId" --output text)
-  if [ "${GW}" = "${IGW_ID}" ]; then
-    PUBLIC_SUBNETS+=("${SID}")
-  fi
-done
-
-if [ "${#PUBLIC_SUBNETS[@]}" -lt 2 ]; then
-  echo "ERROR: Need at least 2 public subnets (routed through IGW)."
-  echo "       Found ${#PUBLIC_SUBNETS[@]}. Check your VPC route tables."
-  exit 1
-fi
-SUBNET_1="${PUBLIC_SUBNETS[0]}"
-SUBNET_2="${PUBLIC_SUBNETS[1]}"
+VPC_ID=$(aws cloudformation describe-stacks --stack-name "${NETWORK_STACK}" \
+  --region "${REGION}" --query "Stacks[0].Outputs[?OutputKey=='VpcId'].OutputValue" --output text)
+PUBLIC_SUBNET_IDS=$(aws cloudformation describe-stacks --stack-name "${NETWORK_STACK}" \
+  --region "${REGION}" --query "Stacks[0].Outputs[?OutputKey=='PublicSubnetIds'].OutputValue" --output text)
+PRIVATE_SUBNET_IDS=$(aws cloudformation describe-stacks --stack-name "${NETWORK_STACK}" \
+  --region "${REGION}" --query "Stacks[0].Outputs[?OutputKey=='PrivateSubnetIds'].OutputValue" --output text)
 echo "  VPC: ${VPC_ID}"
-echo "  Public subnets: ${SUBNET_1}, ${SUBNET_2}"
+echo "  Public subnets (ALB, NAT): ${PUBLIC_SUBNET_IDS}"
+echo "  Private subnets (Fargate pods): ${PRIVATE_SUBNET_IDS}"
 
 # ── Step 4: Deploy the EKS cluster stack ────────────────────────────
 echo "Step 4/9: Deploying EKS cluster stack (${CLUSTER_STACK}) — first run takes 15-20 minutes..."
@@ -119,7 +101,7 @@ aws cloudformation deploy \
   --parameter-overrides \
     "AppName=${APP_NAME}" \
     "Namespace=${NAMESPACE}" \
-    "PublicSubnetIds=${SUBNET_1},${SUBNET_2}" \
+    "PrivateSubnetIds=${PRIVATE_SUBNET_IDS}" \
   --region "${REGION}" \
   --no-fail-on-empty-changeset
 

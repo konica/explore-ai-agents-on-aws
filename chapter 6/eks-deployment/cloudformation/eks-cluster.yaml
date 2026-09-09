@@ -2,7 +2,7 @@ AWSTemplateFormatVersion: '2010-09-09'
 Description: >-
   EKS cluster (Fargate-only compute) for the hospital scheduling agent —
   cluster/Fargate profiles/base IAM roles/OIDC provider, deployed after
-  ecr-repository.yaml. CloudFormation stops here: the Kubernetes-native
+  ecr-repository.yaml and eks-network.yaml. CloudFormation stops here: the Kubernetes-native
   objects (Deployment/Service/Ingress, the per-service-account IRSA roles,
   and the AWS Load Balancer Controller Helm release) are applied by
   deploy-cfn.sh afterward — CloudFormation has no resource types for
@@ -21,7 +21,10 @@ Metadata:
       to patch/scale). deploy-cfn.sh installs the AWS Load Balancer Controller
       and applies the app's Deployment/Service/Ingress after this stack.
     must:
-      - both public subnets must route 0.0.0.0/0 through an Internet Gateway (the ALB and Fargate's image pulls need it)
+      - >-
+        FargateProfile.Subnets must be PrivateSubnetIds, never PublicSubnetIds
+        — AWS::EKS::FargateProfile rejects public subnets outright
+        ("not a private subnet"), unlike ECS Fargate tasks
       - FargateProfileApp must DependsOn FargateProfileDefault; EKS rejects concurrent FargateProfile creation on the same cluster
 
 Parameters:
@@ -38,12 +41,12 @@ Parameters:
     Default: scheduling-agent
     Description: Kubernetes namespace the app's Fargate profile selects.
 
-  PublicSubnetIds:
+  PrivateSubnetIds:
     Type: List<AWS::EC2::Subnet::Id>
     Description: >-
-      At least 2 subnets, in different AZs, whose route table sends 0.0.0.0/0
-      through the VPC's Internet Gateway. Used for both the cluster's ENIs
-      and the ALB the AWS Load Balancer Controller provisions later.
+      2 subnets (from eks-network.yaml's PrivateSubnetIds output) whose route
+      table sends 0.0.0.0/0 through a NAT Gateway. Required for the Fargate
+      profiles — AWS::EKS::FargateProfile rejects public subnets.
 
 Resources:
   ClusterRole:
@@ -99,7 +102,13 @@ Resources:
         AuthenticationMode: API
         BootstrapClusterCreatorAdminPermissions: true
       ResourcesVpcConfig:
-        SubnetIds: !Ref PublicSubnetIds
+        # Private subnets only: the control plane's cross-account ENIs don't
+        # need to be internet-routable (EndpointPublicAccess serves the API
+        # server endpoint separately), and this is Fargate-only — no node
+        # group ever needs a public subnet here. The ALB Load Balancer
+        # Controller discovers PublicSubnetIds independently via their
+        # kubernetes.io/role/elb tag.
+        SubnetIds: !Ref PrivateSubnetIds
         EndpointPublicAccess: true
         EndpointPrivateAccess: false
 
@@ -112,7 +121,7 @@ Resources:
       ClusterName: !Ref Cluster
       FargateProfileName: default
       PodExecutionRoleArn: !GetAtt FargatePodExecutionRole.Arn
-      Subnets: !Ref PublicSubnetIds
+      Subnets: !Ref PrivateSubnetIds
       Selectors:
         - Namespace: default
         - Namespace: kube-system
@@ -124,7 +133,7 @@ Resources:
       ClusterName: !Ref Cluster
       FargateProfileName: !Sub ${AppName}-fp
       PodExecutionRoleArn: !GetAtt FargatePodExecutionRole.Arn
-      Subnets: !Ref PublicSubnetIds
+      Subnets: !Ref PrivateSubnetIds
       Selectors:
         - Namespace: !Ref Namespace
 

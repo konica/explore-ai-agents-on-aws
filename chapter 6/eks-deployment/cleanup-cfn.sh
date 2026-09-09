@@ -5,6 +5,7 @@ set -euo pipefail
 APP_NAME="hospital-scheduling-agent"
 NAMESPACE="scheduling-agent"
 ECR_STACK="${APP_NAME}-ecr"
+NETWORK_STACK="${APP_NAME}-eks-network"
 CLUSTER_STACK="${APP_NAME}-eks-cluster"
 
 APP_ROLE_NAME="${APP_NAME}-irsa-role"
@@ -63,6 +64,14 @@ aws iam delete-policy --policy-arn "${BEDROCK_POLICY_ARN}" 2>/dev/null || true
 echo "Deleting EKS cluster stack (${CLUSTER_STACK}) — this takes several minutes..."
 aws cloudformation delete-stack --stack-name "${CLUSTER_STACK}" --region "${REGION}"
 aws cloudformation wait stack-delete-complete --stack-name "${CLUSTER_STACK}" --region "${REGION}"
+echo "  Deleted."
+
+# ── Delete the network stack ─────────────────────────────────────────
+# Must happen after the cluster stack: the cluster's ENIs and the Fargate
+# profiles' pods still occupy the private subnets while it exists.
+echo "Deleting network stack (${NETWORK_STACK})..."
+aws cloudformation delete-stack --stack-name "${NETWORK_STACK}" --region "${REGION}"
+aws cloudformation wait stack-delete-complete --stack-name "${NETWORK_STACK}" --region "${REGION}"
 echo "  Deleted."
 
 # ── Delete the ECR repository stack ─────────────────────────────────

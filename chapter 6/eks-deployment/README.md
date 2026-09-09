@@ -102,22 +102,36 @@ left in place since other clusters in the account may depend on it.
 EKS bills the control plane at a flat rate (~$0.10/hour) regardless of
 load, on top of Fargate's per-second vCPU/memory pricing for the pod
 (same ~$0.05/hour as the ECS version at the default 1 vCPU / 2 GB). The
-ALB adds a small hourly charge. Run `./cleanup.sh` when done testing —
-an idle EKS cluster still bills for the control plane.
+ALB adds a small hourly charge. Run `./cleanup.sh` (or `./cleanup-cfn.sh`)
+when done testing — an idle EKS cluster still bills for the control plane.
+
+The `deploy-cfn.sh` path additionally provisions a NAT Gateway (~$0.045/hour
+plus ~$0.045/GB processed) in its dedicated VPC, since the Fargate pods'
+private subnets need it for internet/ECR/Bedrock access. `deploy.sh` (the
+`eksctl` path) incurs the same NAT Gateway cost — `eksctl create cluster
+--fargate` provisions one in the VPC it creates automatically — it's just
+not a cost `deploy.sh` manages explicitly the way `deploy-cfn.sh`'s
+`eks-network.yaml` stack does.
 
 ## Alternative: Deploy via CloudFormation
 
 `deploy.sh`/`cleanup.sh` above call `eksctl`, `kubectl`, and `helm` directly
 and aren't tracked in any stack. `deploy-cfn.sh`/`cleanup-cfn.sh` manage the
-AWS-side resources — the EKS cluster, Fargate profiles, and base IAM
-roles — through two CloudFormation stacks instead:
+AWS-side resources — the network, EKS cluster, Fargate profiles, and base
+IAM roles — through three CloudFormation stacks instead:
 `hospital-scheduling-agent-ecr` (just the ECR repo, so it exists before the
-image is pushed — shared with `ecs-deployment`'s CloudFormation path) and
+image is pushed — shared with `ecs-deployment`'s CloudFormation path),
+`hospital-scheduling-agent-eks-network` (a dedicated VPC with a public/
+private subnet split and a NAT Gateway — a default VPC's subnets are all
+public, but `AWS::EKS::FargateProfile` rejects public subnets outright), and
 `hospital-scheduling-agent-eks-cluster` (cluster, Fargate profiles, cluster
-IAM role, Fargate pod execution role, OIDC provider), defined in
+IAM role, Fargate pod execution role, OIDC provider), all defined in
 [`cloudformation/`](cloudformation/). This gets you drift-visible,
 update-in-place, single-command teardown for the cluster infrastructure, at
-the cost of the eksctl-native script's immediacy.
+the cost of the eksctl-native script's immediacy (`eksctl create cluster
+--fargate` provisions the same kind of dedicated public/private VPC
+automatically, which is why `deploy.sh` doesn't need a networking step of
+its own).
 
 CloudFormation can't manage everything here, though: it has no resource
 types for Kubernetes API objects (the `Deployment`/`Service`/`Ingress`,
@@ -132,8 +146,8 @@ mapped against the equivalent ECS concepts.
 
 ```bash
 chmod +x deploy-cfn.sh cleanup-cfn.sh
-./deploy-cfn.sh   # deploys both stacks, builds/pushes the image, installs the ALB Controller, applies the manifests
-./cleanup-cfn.sh  # tears down the Kubernetes resources, then both stacks
+./deploy-cfn.sh   # deploys all three stacks, builds/pushes the image, installs the ALB Controller, applies the manifests
+./cleanup-cfn.sh  # tears down the Kubernetes resources, then all three stacks
 ```
 
 Use only one deployment method (`deploy.sh` or `deploy-cfn.sh`) at a time —
@@ -151,7 +165,7 @@ that one repo.
 | Task/pod IAM | ECS task role | IRSA (IAM role for a Kubernetes service account) |
 | Load balancing | ECS service manages the ALB target group directly | AWS Load Balancer Controller watches an `Ingress` object |
 | Manifests | inline JSON in `deploy.sh` | YAML files in [`k8s/`](k8s/), templated with `envsubst` |
-| CloudFormation option | `deploy-cfn.sh` tracks IAM roles/cluster/ALB/task-def/service in one stack | `deploy-cfn.sh` tracks IAM base roles/cluster/Fargate profiles in one stack; Kubernetes objects and the two IRSA roles are still applied imperatively (CloudFormation has no Kubernetes resource types) |
+| CloudFormation option | `deploy-cfn.sh` tracks IAM roles/cluster/ALB/task-def/service in one stack, reusing the default VPC's public subnets | `deploy-cfn.sh` provisions its own VPC (`eks-network.yaml` — EKS Fargate rejects public subnets) plus IAM base roles/cluster/Fargate profiles (`eks-cluster.yaml`); Kubernetes objects and the two IRSA roles are still applied imperatively (CloudFormation has no Kubernetes resource types) |
 
 `Dockerfile`, `app/`, and `requirements.txt` are identical to
 `ecs-deployment` — the container doesn't know or care which orchestrator is
