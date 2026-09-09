@@ -94,6 +94,8 @@ service) — defined in [`cloudformation/`](cloudformation/). This gets you
 drift-visible, update-in-place, single-command teardown at the cost of the
 CLI-native scripts' immediacy. New to ECS's cluster/service/task-definition/role
 terminology? See [`cloudformation/ECS-CONCEPTS.md`](cloudformation/ECS-CONCEPTS.md).
+Wondering why there's an ALB and two security groups? See
+[`cloudformation/LOAD-BALANCER-AND-SECURITY-GROUPS.md`](cloudformation/LOAD-BALANCER-AND-SECURITY-GROUPS.md).
 
 ```bash
 chmod +x deploy-cfn.sh cleanup-cfn.sh
