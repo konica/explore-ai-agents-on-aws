@@ -4,6 +4,7 @@ A FastAPI application that hosts a Strands agent for coordinating
 surgical scheduling across provider calendars and hospital systems.
 """
 
+import logging
 import os
 from pathlib import Path
 from fastapi import FastAPI, HTTPException
@@ -12,6 +13,9 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 from strands import Agent, tool
 from strands.models.bedrock import BedrockModel
+
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger("hospital_scheduling_agent")
 
 app = FastAPI(title="Hospital Scheduling Agent")
 
@@ -163,7 +167,8 @@ async def schedule(request: ScheduleRequest):
         response = agent(request.message)
         return PlainTextResponse(content=str(response))
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        logger.exception("Unhandled error while processing /schedule request")
+        raise HTTPException(status_code=500, detail=str(e)) from e
 
 
 if __name__ == "__main__":

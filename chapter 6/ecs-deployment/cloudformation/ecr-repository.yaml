@@ -1,0 +1,57 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: >-
+  ECR repository for the hospital scheduling agent image — deployed as its own
+  stack so the repo exists before the image is built/pushed, ahead of the
+  ECS service stack.
+
+Metadata:
+  AWSToolsMetrics:
+    AWSAgentToolkit: aws-cloudformation@2
+
+Parameters:
+  AppName:
+    Type: String
+    Default: hospital-scheduling-agent
+    Description: >-
+      Name used for the ECR repository. Must match the AppName passed to the
+      companion ecs-service.yaml stack.
+    AllowedPattern: '[a-z0-9][a-z0-9._-]*'
+    MinLength: 2
+    MaxLength: 200
+
+Resources:
+  Repository:
+    Type: AWS::ECR::Repository
+    Metadata:
+      com.aws.cloudformation.Context:
+        why: >-
+          holds the agent's Docker image; own stack so the repo can exist
+          before the wrapper script's docker build/push, avoiding a
+          chicken-and-egg dependency on the ECS service stack
+        must:
+          - repo must exist & image pushed before ecs-service.yaml's first deploy
+        mutable: change-with-constraints
+        mutability:
+          RepositoryName: must-never-change
+        ops: delete the ecs-service.yaml stack before this one (its task def refs the image)
+    Properties:
+      RepositoryName: !Ref AppName
+      ImageScanningConfiguration:
+        ScanOnPush: true
+      EmptyOnDelete: true
+      LifecyclePolicy:
+        LifecyclePolicyText: >-
+          {"rules":[{"rulePriority":1,"description":"Expire untagged images after 7 days",
+          "selection":{"tagStatus":"untagged","countType":"sinceImagePushed","countUnit":"days","countNumber":7},
+          "action":{"type":"expire"}}]}
+
+Outputs:
+  RepositoryUri:
+    Description: Full URI (account.dkr.ecr.region.amazonaws.com/name) to pass as EcrRepositoryUri to ecs-service.yaml
+    Value: !Sub "${AWS::AccountId}.dkr.ecr.${AWS::Region}.amazonaws.com/${Repository}"
+  RepositoryArn:
+    Description: ARN of the ECR repository
+    Value: !GetAtt Repository.Arn
+  RepositoryName:
+    Description: Name of the ECR repository
+    Value: !Ref Repository
