@@ -183,6 +183,8 @@ def root():
 @app.post("/schedule")
 async def schedule(request: ScheduleRequest):
     """Send a scheduling request to the hospital agent."""
+    logger.info("schedule request payload: %s", request.model_dump_json())
+
     if not request.message:
         raise HTTPException(status_code=400, detail="No message provided")
 
