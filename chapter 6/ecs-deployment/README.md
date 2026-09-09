@@ -105,3 +105,9 @@ Note the log group differs from the CLI path: `/ecs/hospital-scheduling-agent`
 (not `/ecs/scheduling-agent`). Use only one deployment method at a time — both
 create an ECR repo named `hospital-scheduling-agent` and will collide if run
 together.
+
+Each run of `deploy-cfn.sh` pushes the image under a fresh timestamp tag
+(not `latest`) so the task definition's `Image` property always changes —
+otherwise CloudFormation sees no diff on redeploy and silently leaves the old
+task running. This means repeated deploys accumulate tagged images in ECR;
+`./cleanup-cfn.sh` removes them all when you're done.
