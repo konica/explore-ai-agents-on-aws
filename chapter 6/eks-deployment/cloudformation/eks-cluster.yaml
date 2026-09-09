@@ -1,0 +1,162 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: >-
+  EKS cluster (Fargate-only compute) for the hospital scheduling agent —
+  cluster/Fargate profiles/base IAM roles/OIDC provider, deployed after
+  ecr-repository.yaml. CloudFormation stops here: the Kubernetes-native
+  objects (Deployment/Service/Ingress, the per-service-account IRSA roles,
+  and the AWS Load Balancer Controller Helm release) are applied by
+  deploy-cfn.sh afterward — CloudFormation has no resource types for
+  Kubernetes API objects, and IRSA trust policies need the cluster's OIDC
+  issuer baked in as a literal string, which isn't expressible with CFN's
+  intrinsic functions (they resolve template *values*, not JSON object
+  *keys*, and an IRSA trust policy's Condition key must literally start
+  with the issuer hostname).
+
+Metadata:
+  AWSToolsMetrics:
+    AWSAgentToolkit: aws-cloudformation@2
+  com.aws.cloudformation.Context:
+    arch: >-
+      EKS control plane + a Fargate profile per namespace (no EC2 node group
+      to patch/scale). deploy-cfn.sh installs the AWS Load Balancer Controller
+      and applies the app's Deployment/Service/Ingress after this stack.
+    must:
+      - both public subnets must route 0.0.0.0/0 through an Internet Gateway (the ALB and Fargate's image pulls need it)
+      - FargateProfileApp must DependsOn FargateProfileDefault; EKS rejects concurrent FargateProfile creation on the same cluster
+
+Parameters:
+  AppName:
+    Type: String
+    Default: hospital-scheduling-agent
+    Description: Prefix for resource names in this stack. Must match the AppName used for ecr-repository.yaml.
+    AllowedPattern: '[a-zA-Z0-9-]*'
+    MinLength: 2
+    MaxLength: 40
+
+  Namespace:
+    Type: String
+    Default: scheduling-agent
+    Description: Kubernetes namespace the app's Fargate profile selects.
+
+  PublicSubnetIds:
+    Type: List<AWS::EC2::Subnet::Id>
+    Description: >-
+      At least 2 subnets, in different AZs, whose route table sends 0.0.0.0/0
+      through the VPC's Internet Gateway. Used for both the cluster's ENIs
+      and the ALB the AWS Load Balancer Controller provisions later.
+
+Resources:
+  ClusterRole:
+    Type: AWS::IAM::Role
+    Metadata:
+      com.aws.cloudformation.Context:
+        why: assumed by the EKS control plane itself; standard AWS managed policy, no custom perms needed
+        mutable: change-with-constraints
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: eks.amazonaws.com
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/AmazonEKSClusterPolicy
+
+  FargatePodExecutionRole:
+    Type: AWS::IAM::Role
+    Metadata:
+      com.aws.cloudformation.Context:
+        why: >-
+          assumed by Fargate itself to pull the pod's image and ship logs;
+          the Kubernetes-side equivalent of ECS's task execution role.
+          Application code never uses this role.
+        mutable: change-with-constraints
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: eks-fargate-pods.amazonaws.com
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/AmazonEKSFargatePodExecutionRolePolicy
+
+  Cluster:
+    Type: AWS::EKS::Cluster
+    Metadata:
+      com.aws.cloudformation.Context:
+        why: >-
+          BootstrapClusterCreatorAdminPermissions grants the deploying IAM
+          principal cluster-admin via an EKS access entry, so deploy-cfn.sh
+          can run `aws eks update-kubeconfig` and `kubectl apply` right after
+          this stack completes with no separate aws-auth ConfigMap step.
+    Properties:
+      Name: !Sub ${AppName}-eks-cluster
+      RoleArn: !GetAtt ClusterRole.Arn
+      AccessConfig:
+        AuthenticationMode: API
+        BootstrapClusterCreatorAdminPermissions: true
+      ResourcesVpcConfig:
+        SubnetIds: !Ref PublicSubnetIds
+        EndpointPublicAccess: true
+        EndpointPrivateAccess: false
+
+  FargateProfileDefault:
+    Type: AWS::EKS::FargateProfile
+    Metadata:
+      com.aws.cloudformation.Context:
+        why: covers default/kube-system so cluster add-ons (CoreDNS) and the AWS Load Balancer Controller have somewhere to run
+    Properties:
+      ClusterName: !Ref Cluster
+      FargateProfileName: default
+      PodExecutionRoleArn: !GetAtt FargatePodExecutionRole.Arn
+      Subnets: !Ref PublicSubnetIds
+      Selectors:
+        - Namespace: default
+        - Namespace: kube-system
+
+  FargateProfileApp:
+    Type: AWS::EKS::FargateProfile
+    DependsOn: FargateProfileDefault
+    Properties:
+      ClusterName: !Ref Cluster
+      FargateProfileName: !Sub ${AppName}-fp
+      PodExecutionRoleArn: !GetAtt FargatePodExecutionRole.Arn
+      Subnets: !Ref PublicSubnetIds
+      Selectors:
+        - Namespace: !Ref Namespace
+
+  OidcProvider:
+    Type: AWS::IAM::OIDCProvider
+    Metadata:
+      com.aws.cloudformation.Context:
+        why: >-
+          lets IAM trust this cluster's OIDC issuer, which is what makes
+          IRSA (IAM roles for Kubernetes service accounts) possible.
+          deploy-cfn.sh reads OidcIssuerUrl from this stack's outputs to
+          build the per-service-account trust policies afterward.
+    Properties:
+      Url: !GetAtt Cluster.OpenIdConnectIssuerUrl
+      ClientIdList:
+        - sts.amazonaws.com
+      ThumbprintList:
+        - 9e99a48a9960b14926bb7f3b02e22da2b0ab7280
+
+Outputs:
+  ClusterName:
+    Description: EKS cluster name
+    Value: !Ref Cluster
+  ClusterArn:
+    Description: EKS cluster ARN
+    Value: !GetAtt Cluster.Arn
+  OidcIssuerUrl:
+    Description: Cluster's OIDC issuer URL (https://oidc.eks.<region>.amazonaws.com/id/<id>)
+    Value: !GetAtt Cluster.OpenIdConnectIssuerUrl
+  OidcProviderArn:
+    Description: ARN of the IAM OIDC provider trusting this cluster
+    Value: !GetAtt OidcProvider.Arn
+  FargateProfileAppName:
+    Description: Name of the Fargate profile selecting the app's namespace
+    Value: !Ref FargateProfileApp

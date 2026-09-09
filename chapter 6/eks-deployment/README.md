@@ -34,7 +34,8 @@ Browser (chat UI) → ALB (Ingress, AWS LB Controller) → Service → Pod (EKS 
 - Docker installed and running (`docker info`)
 - Amazon Bedrock model access enabled for Claude Sonnet (Anthropic) in us-east-1
 - AWS CLI v2 (`aws --version`)
-- [`eksctl`](https://eksctl.io) (cluster and Fargate profile lifecycle, IRSA)
+- [`eksctl`](https://eksctl.io) (cluster and Fargate profile lifecycle, IRSA) —
+  only needed for `deploy.sh`; the CloudFormation alternative below doesn't use it
 - `kubectl`
 - `helm` (installs the AWS Load Balancer Controller)
 - `envsubst` (ships with `gettext`; on macOS: `brew install gettext`)
@@ -104,6 +105,42 @@ load, on top of Fargate's per-second vCPU/memory pricing for the pod
 ALB adds a small hourly charge. Run `./cleanup.sh` when done testing —
 an idle EKS cluster still bills for the control plane.
 
+## Alternative: Deploy via CloudFormation
+
+`deploy.sh`/`cleanup.sh` above call `eksctl`, `kubectl`, and `helm` directly
+and aren't tracked in any stack. `deploy-cfn.sh`/`cleanup-cfn.sh` manage the
+AWS-side resources — the EKS cluster, Fargate profiles, and base IAM
+roles — through two CloudFormation stacks instead:
+`hospital-scheduling-agent-ecr` (just the ECR repo, so it exists before the
+image is pushed — shared with `ecs-deployment`'s CloudFormation path) and
+`hospital-scheduling-agent-eks-cluster` (cluster, Fargate profiles, cluster
+IAM role, Fargate pod execution role, OIDC provider), defined in
+[`cloudformation/`](cloudformation/). This gets you drift-visible,
+update-in-place, single-command teardown for the cluster infrastructure, at
+the cost of the eksctl-native script's immediacy.
+
+CloudFormation can't manage everything here, though: it has no resource
+types for Kubernetes API objects (the `Deployment`/`Service`/`Ingress`,
+still applied via `kubectl`), and an IRSA trust policy's condition key has
+to be resolved to a literal string that CloudFormation's intrinsic
+functions can't compute — so `deploy-cfn.sh` creates the two IRSA roles
+(the app's, and the AWS Load Balancer Controller's) with plain `aws iam`
+calls after reading the cluster's OIDC issuer from the stack's outputs. See
+[`cloudformation/EKS-CONCEPTS.md`](cloudformation/EKS-CONCEPTS.md) for the
+full breakdown of what CloudFormation owns vs. what's applied imperatively,
+mapped against the equivalent ECS concepts.
+
+```bash
+chmod +x deploy-cfn.sh cleanup-cfn.sh
+./deploy-cfn.sh   # deploys both stacks, builds/pushes the image, installs the ALB Controller, applies the manifests
+./cleanup-cfn.sh  # tears down the Kubernetes resources, then both stacks
+```
+
+Use only one deployment method (`deploy.sh` or `deploy-cfn.sh`) at a time —
+both create an ECR repo named `hospital-scheduling-agent` and, with
+`ecs-deployment`'s CloudFormation path also active, all three would share
+that one repo.
+
 ## What changed vs. `ecs-deployment`
 
 | | ECS Fargate | EKS Fargate |
@@ -114,6 +151,7 @@ an idle EKS cluster still bills for the control plane.
 | Task/pod IAM | ECS task role | IRSA (IAM role for a Kubernetes service account) |
 | Load balancing | ECS service manages the ALB target group directly | AWS Load Balancer Controller watches an `Ingress` object |
 | Manifests | inline JSON in `deploy.sh` | YAML files in [`k8s/`](k8s/), templated with `envsubst` |
+| CloudFormation option | `deploy-cfn.sh` tracks IAM roles/cluster/ALB/task-def/service in one stack | `deploy-cfn.sh` tracks IAM base roles/cluster/Fargate profiles in one stack; Kubernetes objects and the two IRSA roles are still applied imperatively (CloudFormation has no Kubernetes resource types) |
 
 `Dockerfile`, `app/`, and `requirements.txt` are identical to
 `ecs-deployment` — the container doesn't know or care which orchestrator is
