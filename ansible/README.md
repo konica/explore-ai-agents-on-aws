@@ -47,6 +47,16 @@ requirements.
   (`sam build`, `sam deploy`)
 - **tmux** — terminal multiplexer for running long-lived or background
   sessions during development
+- **kubectl** — used by `chapter 6/eks-deployment/deploy.sh` and
+  `deploy-cfn.sh` to apply manifests and check rollout/ingress status
+- **Helm** — used by both `chapter 6/eks-deployment` scripts to install the
+  AWS Load Balancer Controller
+- **gettext-base** (`envsubst`) — used by both `chapter 6/eks-deployment`
+  scripts to template the `k8s/` manifests before `kubectl apply`
+
+`chapter 6/eks-deployment/deploy.sh` additionally needs
+[`eksctl`](https://eksctl.io), which isn't installed by this playbook yet —
+`deploy-cfn.sh` doesn't need it (see that folder's README for why).
 
 ## Adding a new tool
 

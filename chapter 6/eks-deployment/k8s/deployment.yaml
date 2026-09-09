@@ -1,0 +1,53 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: ${APP_NAME}
+  namespace: ${NAMESPACE}
+  labels:
+    app: ${APP_NAME}
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: ${APP_NAME}
+  template:
+    metadata:
+      labels:
+        app: ${APP_NAME}
+    spec:
+      serviceAccountName: ${SA_NAME}
+      containers:
+        - name: ${APP_NAME}
+          image: ${ECR_REPO}:${IMAGE_TAG}
+          # deploy.sh always pushes to the "latest" tag and force-restarts the
+          # rollout afterward, so pods must always re-pull rather than reuse a
+          # cached image with the same tag.
+          imagePullPolicy: Always
+          ports:
+            - containerPort: ${CONTAINER_PORT}
+          env:
+            - name: MODEL_ID
+              value: "${MODEL_ID}"
+          # Fargate rounds a pod's requests up to the nearest supported
+          # vCPU/memory combination, so requests == limits keeps the
+          # resulting pod size predictable (mirrors the ECS task's
+          # fixed 1 vCPU / 2 GB).
+          resources:
+            requests:
+              cpu: "1"
+              memory: "2Gi"
+            limits:
+              cpu: "1"
+              memory: "2Gi"
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: ${CONTAINER_PORT}
+            initialDelaySeconds: 20
+            periodSeconds: 10
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: ${CONTAINER_PORT}
+            initialDelaySeconds: 30
+            periodSeconds: 30
