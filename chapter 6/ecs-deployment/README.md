@@ -120,7 +120,9 @@ tasks run on an Auto Scaling Group of EC2 container instances that you own,
 rather than AWS-managed Fargate capacity. It reuses the same ECR
 repo/image as the Fargate path (`hospital-scheduling-agent-ecr`) and deploys
 into its own stack (`hospital-scheduling-agent-ec2-service`), so both variants
-can run side by side without colliding.
+can run side by side without colliding. New to how the two launch types
+differ, or what an ENI is and why both stacks depend on one per task? See
+[`cloudformation/FARGATE-VS-EC2-AND-ENI.md`](cloudformation/FARGATE-VS-EC2-AND-ENI.md).
 
 ```bash
 chmod +x deploy-cfn-ec2.sh cleanup-cfn-ec2.sh
