@@ -116,6 +116,17 @@ echo "  Cluster: ${CLUSTER_NAME}"
 
 aws eks update-kubeconfig --name "${CLUSTER_NAME}" --region "${REGION}"
 
+# EKS creates the CoreDNS deployment the instant the cluster goes ACTIVE,
+# which happens before FargateProfileDefault (a separate, later resource in
+# the same stack) finishes creating. Fargate decides a pod's compute type
+# once, at pod-creation time — it's never applied retroactively — so those
+# specific CoreDNS pods are permanently stuck on the (nonexistent) default
+# scheduler ("no nodes available to schedule pods") unless force-recreated
+# now that the Fargate profile actually exists.
+echo "Restarting CoreDNS so it schedules onto the now-existing Fargate profile..."
+kubectl rollout restart deployment coredns -n kube-system
+kubectl rollout status deployment coredns -n kube-system --timeout=120s
+
 # ── Step 5: Namespace ─────────────────────────────────────────────
 echo "Step 5/9: Creating namespace..."
 export NAMESPACE
@@ -225,14 +236,21 @@ ALB_CONTROLLER_ROLE_ARN="${ALB_CONTROLLER_ROLE_ARN}" envsubst < k8s/serviceaccou
 helm repo add eks https://aws.github.io/eks-charts &>/dev/null || true
 helm repo update eks &>/dev/null
 
+# --wait matters: without it, `helm upgrade --install` returns as soon as the
+# release is recorded, not once the controller's pod is actually Ready. The
+# very next step applies a Service/Ingress that the controller's admission
+# webhook must intercept — on Fargate, pod scheduling is slow enough that the
+# webhook has no endpoints yet, and kubectl apply fails with
+# "no endpoints available for service aws-load-balancer-webhook-service".
 helm upgrade --install aws-load-balancer-controller eks/aws-load-balancer-controller \
   -n kube-system \
   --set clusterName="${CLUSTER_NAME}" \
   --set region="${REGION}" \
   --set vpcId="${VPC_ID}" \
   --set serviceAccount.create=false \
-  --set serviceAccount.name="${ALB_CONTROLLER_SA_NAME}"
-echo "  AWS Load Balancer Controller installed."
+  --set serviceAccount.name="${ALB_CONTROLLER_SA_NAME}" \
+  --wait --timeout 5m
+echo "  AWS Load Balancer Controller installed and ready."
 
 # ── Step 8: Apply the Deployment, Service, and Ingress ──────────────
 echo "Step 8/9: Applying Kubernetes manifests..."

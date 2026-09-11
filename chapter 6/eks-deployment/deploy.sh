@@ -120,14 +120,21 @@ helm repo update eks &>/dev/null
 VPC_ID=$(aws eks describe-cluster --name "${CLUSTER_NAME}" --region "${REGION}" \
   --query 'cluster.resourcesVpcConfig.vpcId' --output text)
 
+# --wait matters: without it, `helm upgrade --install` returns as soon as the
+# release is recorded, not once the controller's pod is actually Ready. The
+# Ingress applied in Step 7 is intercepted by the controller's admission
+# webhook — on Fargate, pod scheduling is slow enough that the webhook has no
+# endpoints yet, and kubectl apply fails with "no endpoints available for
+# service aws-load-balancer-webhook-service".
 helm upgrade --install aws-load-balancer-controller eks/aws-load-balancer-controller \
   -n "${ALB_CONTROLLER_NAMESPACE}" \
   --set clusterName="${CLUSTER_NAME}" \
   --set region="${REGION}" \
   --set vpcId="${VPC_ID}" \
   --set serviceAccount.create=false \
-  --set serviceAccount.name="${ALB_CONTROLLER_SA_NAME}"
-echo "  AWS Load Balancer Controller installed."
+  --set serviceAccount.name="${ALB_CONTROLLER_SA_NAME}" \
+  --wait --timeout 5m
+echo "  AWS Load Balancer Controller installed and ready."
 
 # ── Step 6: IRSA service account for Bedrock access ────────────────
 echo "Step 6/8: Creating IAM role for the agent's Kubernetes service account..."
